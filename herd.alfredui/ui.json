@@ -1,5 +1,5 @@
 {
-  "bundleid": "local.herd.launcher.form",
+  "bundleid": "com.sajansharma.herd.form",
   "variablesconfig": {
     "herd_form_task": {
       "src": "args[0]",

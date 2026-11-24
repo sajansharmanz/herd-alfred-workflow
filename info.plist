@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>bundleid</key>
-	<string>local.herd.launcher</string>
+	<string>com.sajansharma.herd</string>
 	<key>connections</key>
 	<dict>
 		<key>F1A00000-0000-4000-8000-000000000001</key>
@@ -701,6 +701,8 @@ Icon: [Sheep Icon Vectors by Vecteezy](https://www.vecteezy.com/free-vector/shee
 		</dict>
 	</array>
 	<key>version</key>
-	<string>1.0</string>
+	<string>1.0.0</string>
+	<key>webaddress</key>
+	<string>https://github.com/sajansharmanz/herd-alfred-workflow</string>
 </dict>
 </plist>

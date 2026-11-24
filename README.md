@@ -46,7 +46,7 @@ Starting an agent on a side task usually means opening a terminal, finding the r
 
 ## Install
 
-1. Download `herd.alfredworkflow` and double-click it.
+1. Download `herd.alfredworkflow` from the [latest release](https://github.com/sajansharmanz/herd-alfred-workflow/releases/latest) and double-click it. To update later, download the newest release and double-click it again. Alfred keeps your settings.
 2. Fill in the form Alfred shows, then click **Import**.
 3. Optional, and recommended: set a hotkey for the form. In Alfred Preferences → Workflows → herd, double-click the **Hotkey** box and press the keys you want, such as ⌃⌥H. Alfred doesn't import hotkeys, so every user sets their own.
 
@@ -167,7 +167,12 @@ tell login also check the session timeout
 
 The agent gets it as if you'd typed it in its tab.
 
-For a longer message, press **⌥↩** on an agent, in `tell` or in `agents`. A form opens with the running agents and a message box. Above the message, **Recent** shows the last 50 lines on that agent's screen, so you can see what you're replying to. It updates every 2 seconds while the agent works. Pick another agent and it changes to match. If you need more than the last 50 lines, press **Open in Herdr** to go to the agent's tab. Write several lines or paste a log, then press **Send**.
+For a longer message, press **⌥↩** on an agent, in `tell` or in `agents`. A form opens with:
+
+- **Agent**: the running agents. Pick another one to switch.
+- **Recent**: the last 50 lines on that agent's screen, so you can see what you're replying to. It opens at the newest line and updates every 2 seconds while the agent works. Scroll up to read back, and it stays where you put it.
+- **Open in Herdr**: goes to the agent's tab, if you need more than 50 lines.
+- **Message**: write several lines or paste a log, then press **Send**.
 
 ### `tidy`: clear finished worktrees
 
@@ -311,13 +316,47 @@ herd review 5281
 
 ## Working on herd
 
-The workflow is `herd` (a zsh script), `info.plist` (the Alfred workflow) and `herd.alfredui` (the options form). `herd.alfredui/scripts/fill` fills the form's lists when it opens. `herd.alfredui/scripts/space` shows the New Space box when you pick **New Space…**. `herd.alfredui/scripts/history` refreshes the message form's Recent box when you pick another agent. `herd.alfredui/scripts/pulse` runs every 2 seconds while the form is open and refreshes Recent when the agent's screen changes. The Start button hands the choices back as `herd_f_*` variables. Run `./build.sh` to pack it all into `herd.alfredworkflow`. To redraw the status icons, run `uv run --with pillow python make-icons.py`. It needs `rsvg-convert` (`brew install librsvg`).
+### What's in the repo
+
+| File | What it does |
+|---|---|
+| `herd` | The zsh script that does the work |
+| `info.plist` | The Alfred workflow: keywords, hotkey, form and settings |
+| `herd.alfredui/ui.json` | The options form and the message form |
+| `herd.alfredui/scripts/fill` | Fills the form's lists when it opens |
+| `herd.alfredui/scripts/space` | Shows the New Space box when you pick **New Space…** |
+| `herd.alfredui/scripts/history` | Refreshes the Recent box when you pick another agent |
+| `herd.alfredui/scripts/pulse` | Runs every 2 seconds while the form is open, and refreshes Recent when the agent's screen changes |
+| `icons/` | The status icons. `make-icons.py` draws them. |
+| `build.sh` | Packs everything into `herd.alfredworkflow` |
+| `scripts/next-version` | Works out the next version number from the commit messages |
+| `.github/workflows/release.yml` | Builds and publishes a release on every push to `master` |
+
+The form's Start button hands its choices back to `herd` as `herd_f_*` variables.
+
+### Testing
 
 `herd` refuses to run outside Alfred. To test it from a terminal, set `HERD_DEV=1`, and add `-n` to print the Herdr commands instead of running them:
 
 ```sh
 HERD_DEV=1 ./herd -n fix the build +wt @codex
 ```
+
+Run `./build.sh` to make `herd.alfredworkflow`, then double-click it to install your build. The built file isn't kept in git.
+
+To redraw the status icons, run `uv run --with pillow python make-icons.py`. It needs `rsvg-convert` (`brew install librsvg`). To give another agent a logo, add it to the list at the top of `make-icons.py`.
+
+### Releases
+
+Every push to `master` makes a release on GitHub, with the built workflow attached and notes listing the changes. The version goes up based on the commit messages since the last release:
+
+| Commit message starts with | Example | Version change |
+|---|---|---|
+| `feat:` | `feat: show agent logos` | 1.2.0 → 1.3.0 |
+| `fix:`, or anything else | `fix: tell form scroll` | 1.2.0 → 1.2.1 |
+| A `!` after the type, or `BREAKING CHANGE:` in the body | `feat!: drop the TUI backend` | 1.2.0 → 2.0.0 |
+
+The first release uses the version in `info.plist`. After that, the tags (`v1.2.3`) hold the version, and the release job stamps it into the package. You don't need to edit `info.plist` to release.
 
 ## Licence
 

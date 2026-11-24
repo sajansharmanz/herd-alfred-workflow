@@ -1,4 +1,4 @@
 #!/bin/zsh
 # Fills the form with this machine's agents, repos and Spaces. Its output is a JSON "update" action.
-export alfred_workflow_bundleid=${alfred_workflow_bundleid:-local.herd.launcher}
+export alfred_workflow_bundleid=${alfred_workflow_bundleid:-com.sajansharma.herd}
 exec "${0:A:h}/../../herd" form-json "${1:-}"

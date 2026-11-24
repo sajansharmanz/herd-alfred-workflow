@@ -1,4 +1,4 @@
 #!/bin/zsh
 # Shows what the picked agent last put on its screen, so you know what you're replying to.
-export alfred_workflow_bundleid=${alfred_workflow_bundleid:-local.herd.launcher}
+export alfred_workflow_bundleid=${alfred_workflow_bundleid:-com.sajansharma.herd}
 exec "${0:A:h}/../../herd" history-json "${1:-}"

@@ -1,0 +1,54 @@
+name: Release
+
+# Every push to master builds the workflow and publishes it as a GitHub release.
+# The version comes from the commit messages since the last release: see scripts/next-version.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the version needs every tag and commit
+
+      - name: Work out the version
+        id: version
+        run: |
+          version=$(scripts/next-version)
+          if [ -z "$version" ]; then
+            echo "No new commits since the last release."
+          elif git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "v$version already exists. Raise the version in info.plist or tag by hand." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Check the script
+        if: steps.version.outputs.version != ''
+        run: |
+          sudo apt-get install -y -qq zsh >/dev/null
+          zsh -n herd
+
+      - name: Build
+        if: steps.version.outputs.version != ''
+        run: VERSION=${{ steps.version.outputs.version }} ./build.sh
+
+      - name: Publish the release
+        if: steps.version.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" herd.alfredworkflow \
+            --target "$GITHUB_SHA" --title "herd $VERSION" --generate-notes

@@ -1,0 +1,23 @@
+#!/bin/sh
+# Prints the next version from the commits since the last vX.Y.Z tag, using conventional commit prefixes:
+# a "!" after the type or "BREAKING CHANGE" bumps major, feat: bumps minor, anything else bumps patch.
+# Prints nothing when there are no new commits. With no tag yet, prints the version in info.plist.
+set -e
+cd "$(dirname "$0")/.."
+last=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+if [ -z "$last" ]; then
+  python3 -c 'import plistlib; print(plistlib.load(open("info.plist", "rb"))["version"])'
+  exit
+fi
+log=$(git log --format='%s%n%b' "$last"..HEAD)
+[ -n "$(git rev-list "$last"..HEAD)" ] || exit 0
+IFS=. read -r major minor patch <<V
+${last#v}
+V
+if printf '%s\n' "$log" | grep -qE '^[a-z]+(\([^)]*\))?!:|BREAKING CHANGE'; then
+  echo "$((major + 1)).0.0"
+elif printf '%s\n' "$log" | grep -qE '^feat(\([^)]*\))?:'; then
+  echo "$major.$((minor + 1)).0"
+else
+  echo "$major.$minor.$((patch + 1))"
+fi
