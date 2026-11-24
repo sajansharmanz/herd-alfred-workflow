@@ -167,7 +167,7 @@ tell login also check the session timeout
 
 The agent gets it as if you'd typed it in its tab.
 
-For a longer message, press **⌥↩** on an agent, in `tell` or in `agents`. A form opens with the running agents and a message box. Above the message, **Recent** shows the last lines on that agent's screen, so you can see what you're replying to. Pick another agent and it changes to match. If you need more than the last 50 lines, press **Open in Herdr** to go to the agent's tab. Write several lines or paste a log, then press **Send**.
+For a longer message, press **⌥↩** on an agent, in `tell` or in `agents`. A form opens with the running agents and a message box. Above the message, **Recent** shows the last 50 lines on that agent's screen, so you can see what you're replying to. It updates every 2 seconds while the agent works. Pick another agent and it changes to match. If you need more than the last 50 lines, press **Open in Herdr** to go to the agent's tab. Write several lines or paste a log, then press **Send**.
 
 ### `tidy`: clear finished worktrees
 
@@ -311,7 +311,7 @@ herd review 5281
 
 ## Working on herd
 
-The workflow is `herd` (a zsh script), `info.plist` (the Alfred workflow) and `herd.alfredui` (the options form). `herd.alfredui/scripts/fill` fills the form's lists when it opens. `herd.alfredui/scripts/space` shows the New Space box when you pick **New Space…**. `herd.alfredui/scripts/history` refreshes the message form's Recent box when you pick another agent. The Start button hands the choices back as `herd_f_*` variables. Run `./build.sh` to pack it all into `herd.alfredworkflow`. To redraw the status icons, run `uv run --with pillow python make-icons.py`. It needs `rsvg-convert` (`brew install librsvg`).
+The workflow is `herd` (a zsh script), `info.plist` (the Alfred workflow) and `herd.alfredui` (the options form). `herd.alfredui/scripts/fill` fills the form's lists when it opens. `herd.alfredui/scripts/space` shows the New Space box when you pick **New Space…**. `herd.alfredui/scripts/history` refreshes the message form's Recent box when you pick another agent. `herd.alfredui/scripts/pulse` runs every 2 seconds while the form is open and refreshes Recent when the agent's screen changes. The Start button hands the choices back as `herd_f_*` variables. Run `./build.sh` to pack it all into `herd.alfredworkflow`. To redraw the status icons, run `uv run --with pillow python make-icons.py`. It needs `rsvg-convert` (`brew install librsvg`).
 
 `herd` refuses to run outside Alfred. To test it from a terminal, set `HERD_DEV=1`, and add `-n` to print the Herdr commands instead of running them:
 

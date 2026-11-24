@@ -36,6 +36,12 @@
       "scriptenv": true
     }
   },
+  "pulse": {
+    "src": "scripts/pulse",
+    "interval": 2,
+    "intervalmode": "delay",
+    "now": false
+  },
   "window": {
     "title": "herd",
     "padding": 16,
@@ -65,7 +71,7 @@
           "components": [
             {
               "type": "label",
-              "text": "Loading…"
+              "text": "Loading\u2026"
             },
             {}
           ]
