@@ -258,7 +258,7 @@ The form covers the everyday settings. For more, edit `~/.config/herd/config.jso
 
 ### Agents and agent variants
 
-`herd setup` finds these agents for you: claude, codex, opencode, gemini, pi, amp, cursor-agent, aider, goose, crush, droid, qwen, copilot, kiro-cli, auggie and hermes. To use an agent that isn't on the list, add it here with the command that starts it. You can also add the same agent with different flags. Then pick it with `@`:
+`herd setup` finds these agents for you: claude, codex, opencode, gemini, pi, amp, cursor-agent, aider, goose, crush, droid, qwen, copilot, kiro-cli, auggie and hermes. herd hands each one the task the way it expects: as the first message, through a flag such as `gemini -i`, or by typing it in once the agent is ready (opencode, amp, crush and aider). To use an agent that isn't on the list, add it here with the command that starts it. Put `"{prompt}"` where the task goes, or add `"type": true` to have herd type it in. You can also add the same agent with different flags. Then pick it with `@`:
 
 ```json
 "agents": {

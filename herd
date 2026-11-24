@@ -21,6 +21,12 @@ KNOWN=(claude codex opencode gemini pi amp cursor-agent aider goose crush droid 
 # How each agent invokes a skill. Agents not listed get GENERIC_SKILL.
 typeset -A SKILL_TPL=(claude '/{skill} {args}' codex '${skill} {args}' pi '/skill:{skill} {args}')
 GENERIC_SKILL='Use the {skill} skill. {args}'
+# Herdr desktop starts an agent with its task as the last word of its command. These agents read that word
+# as something else (a file, a folder, a one-off run), so they take the task through a flag instead.
+DEFAULT_CMD='{"gemini": ["gemini", "-i", "{prompt}"], "qwen": ["qwen", "-i", "{prompt}"], "copilot": ["copilot", "-i", "{prompt}"],
+  "kiro-cli": ["kiro-cli", "chat", "{prompt}"], "goose": ["goose", "run", "-s", "-t", "{prompt}"], "hermes": ["hermes", "chat", "-q", "{prompt}"]}'
+# These have no such flag, so herd types the task in once the agent is ready.
+TYPED=(opencode amp crush aider)
 
 die() { print -r -- "herd: $*" >&2; exit 1; }
 home() { print -r -- "${1/#\~/$HOME}"; }
@@ -48,10 +54,10 @@ setup() {
   local tpl; tpl=$(for a in ${(k)SKILL_TPL}; do print -r -- "$a"$'\t'"$SKILL_TPL[$a]"; done | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add')
   mkdir -p "${CFG:h}"; rm -f "${CFG:h}/skills.tsv"  # rescan skills too
   jq -n --argjson cur "$cur" --arg path "$PATH" --arg def "$def" --arg repo "$repo" --argjson roots "$roots" \
-    --argjson found "$(print -rl -- $found | jq -Rsc 'split("\n") | map(select(. != ""))')" --argjson tpl "$tpl" \
+    --argjson found "$(print -rl -- $found | jq -Rsc 'split("\n") | map(select(. != ""))')" --argjson tpl "$tpl" --argjson defcmd "$DEFAULT_CMD" --argjson typed "$(print -rl -- $TYPED | jq -Rsc 'split("\n") | map(select(. != ""))')" \
     '
     $cur + {path: $path, defaultAgent: $def, repoRoots: $roots, defaultRepo: $repo}
-    | .agents = ((reduce $found[] as $a ({}; .[$a] = ({cmd: [$a]} + (if $tpl[$a] then {skill: $tpl[$a]} else {} end)))) + (.agents // {}))
+    | .agents = ((reduce $found[] as $a ({}; .[$a] = ({cmd: ($defcmd[$a] // [$a])} + (if $typed | index($a) then {type: true} else {} end) + (if $tpl[$a] then {skill: $tpl[$a]} else {} end)))) + (.agents // {}))
     | .worktreeRoot //= "~/.herdr/worktrees" | .space //= "{repo}" | .copyFiles //= [".env"]
     | .shortcuts //= {}' > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
   print -r -- "Found: $(c '.agents | keys | join(", ")'). Default agent: $def"
@@ -710,6 +716,7 @@ cmdjson=$(jq -c --arg a "$agent" --arg p "$prompt" '.agents[$a].cmd | map(if . =
 bin=$(jq -r '.[0]' <<<"$cmdjson")
 command -v "$bin" >/dev/null || die "can't find '$bin'. Install it, or change Default agent in Configure Workflow."
 inline=0; jq -e --arg a "$agent" '.agents[$a].cmd | index("{prompt}")' <<<"$CONF" >/dev/null && inline=1
+typed=0; [[ $(c --arg a "$agent" '.agents[$a].type // false') == true ]] && typed=1
 envpath=$(c .path)
 spacename=$(field space); spacename=${spacename:-$(c .space)}; spacename=${spacename//\{repo\}/${repo:t}}
 # Herdr names: a lowercase letter first, then up to 31 of a-z 0-9 - _
@@ -737,11 +744,15 @@ case $backend in
     print -r -- "$spaces" > "$SPACES"  # lets the core backend find Spaces while the window is closed
     space=$(jq -r --arg n "$spacename" '.[$n] // empty' <<<"$spaces")
     argv=$(jq -c --arg path "$envpath" '["/usr/bin/env", "PATH=\($path)"] + .' <<<"$cmdjson")
-    task=(--task "$prompt"); (( inline )) && task=()
+    task=(--task "$prompt"); (( inline || typed )) && task=()
     if [[ -n $space ]]; then
-      run herdr-app do tab.new --space "$space" --name "$tabname" --folder "$dir" --argv "$argv" "${task[@]}" --focus $focus >/dev/null
+      out=$(run herdr-app do tab.new --space "$space" --name "$tabname" --folder "$dir" --argv "$argv" "${task[@]}" --focus $focus)
     else
-      run herdr-app do space.new --name "$spacename" --tab "$tabname" --folder "$dir" --argv "$argv" "${task[@]}" --focus $focus >/dev/null
+      out=$(run herdr-app do space.new --name "$spacename" --tab "$tabname" --folder "$dir" --argv "$argv" "${task[@]}" --focus $focus)
+    fi
+    if (( typed )); then # wait until it's ready, or a minute for agents Herdr can't read, then type the task
+      t=$(jq -r '.terminal // empty' <<<"$out" 2>/dev/null); t=${t:-<new-terminal>}
+      later "hc wait ${(q)t} --timeout 60; env -u HC_TERMINAL_ID hc send ${(q)t} ${(q)prompt}"
     fi
     (( show )) && run open -a Herdr
     where="$tabname in $spacename" ;;
