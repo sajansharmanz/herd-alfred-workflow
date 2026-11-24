@@ -1,0 +1,4 @@
+#!/bin/zsh
+# Shows the new Space name box while "New Space…" is picked.
+[[ ${1:-} == __new__ ]] && hide=false || hide=true
+print -r -- "{\"update\":{\"relayout\":true,\"ids\":{\"newspace\":{\"hidden\":$hide},\"newspacelabel\":{\"hidden\":$hide}}}}"

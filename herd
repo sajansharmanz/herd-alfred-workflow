@@ -1,0 +1,660 @@
+#!/bin/zsh
+# herd: an Alfred workflow that starts any coding agent on a task in Herdr, optionally on its own git worktree.
+# Alfred runs it two ways: `herd alfred "<query>"` (Script Filter) and `herd --line "<query>"` (Run Script).
+# What you type after the keyword:
+#   <task words...>     a free-text task
+#   /<skill> [args...]  a skill or slash command from the repo or your global folders
+#   <shortcut> [args]   a shortcut from the config
+#   @agent  #repo  %space (%here)  =name  +wt  +pr  +clip   anywhere in the line
+#   setup | default <agent> | root [add|remove <folder>]
+# Settings: Alfred's Configure Workflow form, then ~/.config/herd/config.json.
+# HERD_DEV=1 lets it run outside Alfred for testing, with -n to print the Herdr commands instead of running them.
+set -eu
+SELF=${0:A}
+[[ -n ${alfred_workflow_bundleid:-}${HERD_DEV:-} ]] || { print -ru2 "herd runs from Alfred. Type herd in Alfred."; exit 1; }
+setopt extendedglob
+typeset -U path
+CFG=${HERD_CONFIG:-$HOME/.config/herd/config.json}
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+
+KNOWN=(claude codex opencode gemini pi amp cursor-agent aider goose crush droid qwen copilot kiro-cli auggie)
+# How each agent invokes a skill. Agents not listed get GENERIC_SKILL.
+typeset -A SKILL_TPL=(claude '/{skill} {args}' codex '${skill} {args}' pi '/skill:{skill} {args}')
+GENERIC_SKILL='Use the {skill} skill. {args}'
+
+die() { print -r -- "herd: $*" >&2; exit 1; }
+home() { print -r -- "${1/#\~/$HOME}"; }
+c() { if [[ -n ${CONF:-} ]]; then jq -r "$@" <<<"$CONF"; else jq -r "$@" "$CFG"; fi; }
+
+setup() {
+  local cur='{}' p a def roots repo
+  [[ -f $CFG ]] && cur=$(<"$CFG")
+  # Alfred starts scripts with a bare PATH, so record the login shell's once.
+  p=$("${SHELL:-/bin/zsh}" -ilc 'print -r -- "__HERD__$PATH"' 2>/dev/null </dev/null | sed -n 's/^__HERD__//p' | tail -1) || true
+  PATH=${p:-$PATH}; path=($path)
+  local found=()
+  for a in $KNOWN; do command -v $a >/dev/null && found+=$a; done
+  found+=(${(f)"$(jq -r '.agents // {} | keys[]' <<<"$cur")"})
+  found=(${(u)found})
+  (( $#found )) || die "no agent CLIs found on PATH ($KNOWN)"
+
+  def=$(jq -r '.defaultAgent // empty' <<<"$cur")
+  (( ${found[(Ie)$def]} )) || def=$found[1]
+  roots=$(jq -c '.repoRoots // empty' <<<"$cur")
+  [[ -n $roots ]] || roots='[]'
+  repo=$(jq -r '.defaultRepo // empty' <<<"$cur")
+
+
+  local tpl; tpl=$(for a in ${(k)SKILL_TPL}; do print -r -- "$a"$'\t'"$SKILL_TPL[$a]"; done | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add')
+  mkdir -p "${CFG:h}"; rm -f "${CFG:h}/skills.tsv"  # rescan skills too
+  jq -n --argjson cur "$cur" --arg path "$PATH" --arg def "$def" --arg repo "$repo" --argjson roots "$roots" \
+    --argjson found "$(print -rl -- $found | jq -Rsc 'split("\n") | map(select(. != ""))')" --argjson tpl "$tpl" \
+    '
+    $cur + {path: $path, defaultAgent: $def, repoRoots: $roots, defaultRepo: $repo}
+    | .agents = ((reduce $found[] as $a ({}; .[$a] = ({cmd: [$a]} + (if $tpl[$a] then {skill: $tpl[$a]} else {} end)))) + (.agents // {}))
+    | .worktreeRoot //= "~/.herdr/worktrees" | .space //= "{repo}" | .copyFiles //= [".env"]
+    | .shortcuts //= {}' > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+  print -r -- "Found: $(c '.agents | keys | join(", ")'). Default agent: $def"
+}
+
+# Alfred keeps Configure Workflow values in prefs.plist, and doesn't pass them to every object (the form's scripts miss them).
+for v in herd_agent herd_repo_roots herd_default_repo herd_space herd_backend; do
+  [[ -z ${(P)v:-} && -f ${SELF:h}/prefs.plist ]] && typeset -g $v="$(plutil -extract $v raw "${SELF:h}/prefs.plist" 2>/dev/null || true)"
+done
+
+[[ ${1:-} == setup ]] && { setup; exit; }
+[[ -f $CFG ]] || setup </dev/null >/dev/null
+# Values from Alfred's Configure Workflow form arrive as env vars and win over the file.
+# Default agent is the command that starts it, flags and all: "claude", "codex --full-auto", "~/bin/my-agent".
+fw=(${(Q)${(z)${herd_agent:-}}}); fkey=${${fw[1]:-}:t}; ftpl=""; [[ -n $fkey ]] && ftpl=${SKILL_TPL[$fkey]:-}
+fcmd=$(for w in $fw; do home "$w"; done | jq -Rsc 'split("\n") | map(select(. != ""))')
+CONF=$(jq --arg agent "$fkey" --argjson cmd "$fcmd" --arg tpl "$ftpl" --arg roots "${herd_repo_roots:-}" --arg repo "${herd_default_repo:-}" \
+  --arg space "${herd_space:-}" --arg backend "${herd_backend:-}" '
+  def set($k; $v): if $v != "" then .[$k] = $v else . end;
+  set("defaultAgent"; $agent) | set("defaultRepo"; $repo) | set("space"; $space) | set("backend"; $backend)
+  | if $agent == "" then .
+    elif ($cmd | length) > 1 or .agents[$agent] == null then .agents[$agent] = ((.agents[$agent] // {}) + {cmd: $cmd} + (if $tpl != "" then {skill: $tpl} else {} end))
+    else . end
+  | if $roots != "" then .repoRoots = ($roots | split("\n") | map(gsub("^\\s+|\\s+$"; "")) | map(select(. != ""))) else . end' "$CFG")
+PATH="$(c '.path // empty'):$PATH"; path=($path)
+
+repo_dirs() { # every repo in the repo folders. A folder that is itself a repo counts too.
+  local r d
+  for r in ${(f)"$(c '.repoRoots[]?')"}; do
+    r=$(home "$r")
+    if [[ -e $r/.git ]]; then print -r -- ${r:A}; else for d in $r/*/.git(N); do print -r -- ${d:h:A}; done; fi
+  done | awk '!seen[$0]++'
+}
+
+resolve_repo() { # resolve_repo [name|path]: with neither, the default repo, then the first repo found
+  local x=${1:-} r
+  [[ -n $x ]] || x=$(c '.defaultRepo // empty')
+  [[ -n $x ]] || x=$(repo_dirs | head -1)
+  [[ -n $x ]] || x=$HOME
+  x=$(home "$x")
+  if [[ $x != */* ]]; then
+    for r in ${(f)"$(repo_dirs)"}; do [[ ${r:t} == "$x" ]] && { x=$r; break; }; done
+  fi
+  [[ -d $x ]] || die "no repo '${1:-}' (looked in: $(c '.repoRoots | join(", ")'))"
+  print -r -- ${x:A}
+}
+
+repos() { repo_dirs | while read -r d; do print -r -- ${d:t}; done | sort -u; }
+
+# Every agent keeps skills as <dot-folder>/…/<name>/SKILL.md, and slash commands as …/command(s)/<name>.md,
+# so herd looks for those under the dot-folders of the repo and of your home, rather than keeping a list of agents' folders.
+skill_files() { # skill_files <dir>...
+  local d dots=()
+  for d in "$@"; do dots+=($d/.[!.]*(N/)); done
+  (( $#dots )) || return 0
+  find $dots -maxdepth 5 \( -name node_modules -o -name .git -o -iname cache -o -name .cache -o -name logs -o -name sessions \
+    -o -name projects -o -name worktrees -o -name plugins -o -name share -o -name state \) -prune \
+    -o \( -name SKILL.md -o -path '*/command*/*.md' \) -print 2>/dev/null
+}
+
+skill_rows() { # name<TAB>description for each skill file on stdin
+  local f
+  while read -r f; do
+    print -r -- "${${f:#*/SKILL.md}:+${f:t:r}}${${(M)f:#*/SKILL.md}:+${f:h:t}}"$'\t'"$(sed -n 's/^description: *//p' $f | head -1 | tr -d '"' | cut -c1-140)"
+  done
+}
+
+global_skills() { # cached, because searching your home takes a few seconds. Refreshed in the background after an hour.
+  local cache=${CFG:h}/skills.tsv
+  build() { { skill_files $HOME; for d in ${(f)"$(c '.skillDirs[]?')"}; do skill_files "$(home "$d")"; done; } | skill_rows > "$cache.$$" && mv "$cache.$$" "$cache"; }
+  if [[ ! -f $cache ]]; then build
+  elif [[ -n $cache(#qNmh+1) ]]; then (build &>/dev/null &!); fi
+  cat "$cache"
+}
+
+skills() { # name<TAB>description, the repo's first
+  { [[ $1 != $HOME ]] && skill_files "$1" | skill_rows; global_skills; } | awk -F'\t' 'NF && !seen[$1]++'
+}
+
+detect_backend() {
+  backend=${HERD_BACKEND:-$(c '.backend // "auto"')}
+  local session; session=$(c '.tuiSession // empty'); [[ -n $session ]] && export HERDR_SESSION=$session
+  [[ $backend == auto ]] || return 0
+  if command -v herdr-app >/dev/null && herdr-app ls >/dev/null 2>&1; then backend=app
+  elif command -v hc >/dev/null && hc ls >/dev/null 2>&1; then backend=core
+  elif command -v herdr >/dev/null && herdr workspace list >/dev/null 2>&1; then backend=tui
+  else return 1; fi
+}
+
+spaces_list() { # name<TAB>1 when it's the one on screen
+  case $backend in
+    app) herdr-app ls | jq -r '.spaces[] | "\(.name)\t\(if .active then 1 else 0 end)"' ;;
+    tui) herdr workspace list | jq -r '.result.workspaces[] | "\(.label)\t\(if .focused then 1 else 0 end)"' ;;
+    *) jq -r 'keys[] | "\(.)\t0"' "${CFG:h}/spaces.json" 2>/dev/null || true ;;
+  esac
+}
+
+tilde() { local d=${1:A}; [[ $d == $HOME/* ]] && d="~/${d#$HOME/}"; print -r -- "$d"; }
+
+slug() { print -r -- "${(L)1//[^a-zA-Z0-9]/}"; }
+
+pick_space() { # pick_space <token>: an exact match, then a unique prefix, else the token as a new name
+  local t=$1 n a hit="" hits=0
+  if [[ $t == here ]]; then
+    spaces_list | while IFS=$'\t' read -r n a; do [[ $a == 1 ]] && { print -r -- "$n"; return; }; done
+    die "can't tell which Space is on screen with the $backend backend. Name it instead."
+  fi
+  while IFS=$'\t' read -r n a; do
+    [[ $(slug "$n") == $(slug "$t") ]] && { print -r -- "$n"; return; }
+    [[ $(slug "$n") == $(slug "$t")* ]] && { hit=$n; (( ++hits )); }
+  done < <(spaces_list)
+  (( hits == 1 )) && { print -r -- "$hit"; return; }
+  (( hits > 1 )) && die "%$t matches more than one Space. Type more of the name."
+  print -r -- "${t//_/ }" # a new Space; _ stands in for a space, since a space ends the option
+}
+
+alfred() {
+  local q=$1 words last pre repo agent a r s n d m
+  words=(${(s: :)q})
+  last=${words[-1]:-}; [[ $q == *" " || -z $q ]] && last=""
+  pre=${q[1,$(( ${#q} - ${#last} ))]}
+  agent=""; for a in ${(M)words:#@?*}; do c -e --arg a "${a#@}" '.agents[$a]' >/dev/null && agent=${a#@}; done; agent=${agent:-$(c .defaultAgent)}
+  repo=""; for r in ${(M)words:#\#?*}; do ( resolve_repo "${r#\#}" ) >/dev/null 2>&1 && repo=${r#\#}; done; repo=$(resolve_repo "$repo" 2>/dev/null) || repo="?"
+  emit() { print -r -- "$1"$'\t'"$2"$'\t'"$3"$'\t'"$4"$'\t'"$5"; }
+  {
+    # @ and # suggest your agents and repos, and fall back to the plain task when none match (a subagent, an issue number).
+    if [[ $last == @* && -n ${(M)${(f)"$(c '.agents | keys[]')"}:#${last#@}*} ]]; then
+      for a in ${(f)"$(c '.agents | keys[]')"}; do [[ $a == ${last#@}* ]] && emit "@$a" "Use $a for this task" "" "$pre@$a " 0; done
+    elif [[ $last == %* ]]; then
+      detect_backend || true
+      spaces_list | while IFS=$'\t' read -r n a; do
+        [[ $a == 1 && here == ${last#%}* ]] && emit "%here" "The Space on screen: $n" "" "$pre%here " 0
+      done
+      spaces_list | while IFS=$'\t' read -r n a; do
+        [[ $(slug "$n") == *$(slug "${last#%}")* ]] && emit "%$(slug "$n")" "Open in the Space \"$n\"" "" "$pre%$(slug "$n") " 0
+      done
+      s=${last#%}
+      m=0; for n in ${(f)"$(spaces_list | cut -f1)"}; do [[ $(slug "$n") == $(slug "$s")* ]] && m=1; done
+      [[ -n $s && $s != here ]] && (( ! m )) &&
+        emit "New Space \"${s//_/ }\"" "No Space by that name, so herd makes one. Use _ for a space in the name." "" "$pre$last " 0
+    elif [[ $q == root* ]]; then
+      if [[ ${words[2]:-} == add && -n ${words[3]:-} ]]; then
+        p="${(j: :)words[3,-1]}"
+        [[ -d $(home "$p") ]] && emit "Add $p as a repo folder" "#repo will look for repos inside it" "root add $p" "$q" 1 \
+          || emit "No folder at $p" "Type the full path, e.g. root add ~/repos" "" "$q" 0
+      else
+        emit "root add <folder>" "Add a folder that holds your repos" "" "root add " 0
+        for r in ${(f)"$(c '.repoRoots[]?')"}; do emit "Remove $r" "Stop looking for repos in $r" "root remove $r" "root remove $r" 1; done
+      fi
+    elif [[ $last == \#* && -z $(c '.repoRoots[]?') ]]; then
+      emit "No repo folders yet" "Add one with: root add ~/repos. Or type a path: #~/code/app" "" "root add " 0
+    elif [[ $last == \#* && -n ${(M)${(f)"$(repos)"}:#*${last#\#}*} ]]; then
+      for r in ${(f)"$(repos)"}; do [[ $r == *${last#\#}* ]] && emit "#$r" "Run in $r" "" "$pre#$r " 0; done
+    elif [[ $q == "default "* ]]; then
+      for a in ${(f)"$(c '.agents | keys[]')"}; do [[ $a == ${words[2]:-}* ]] && emit "Default agent: $a" "Use $a when no @agent is given" "default $a" "default $a" 1; done
+    elif [[ $last == /* ]]; then # a /skill can go anywhere in the line; herd moves it to the front
+      skills "$repo" | while IFS=$'\t' read -r n d; do [[ $n == *${last#/}* ]] && emit "/$n" "$d · ${repo:t}" "$pre/$n" "$pre/$n " 1; done
+    else
+      if [[ -n $q ]]; then
+        emit "$q" "$agent in ${repo:t}   ·   /skill  @agent  #repo  %space  =name  +wt  +pr" "$q" "$q" 1
+      else
+        emit "Type a task, or pick below" "$agent in ${repo:t}   ·   /skill  @agent  #repo  %space  =name  +wt  +pr" "" "" 0
+        emit "/ skills" "Skills and commands from ${repo:t} and your global folders" "" "/" 0
+      fi
+      if (( $#words <= 1 )); then
+        for s in ${(f)"$(c '.shortcuts | keys[]')"}; do [[ $s == ${last}* ]] && emit "$s" "$(c --arg s $s '.shortcuts[$s].about // "Shortcut"')" "$s" "$s " 1; done
+        [[ -z ${herd_agent:-} && default == ${last}* ]] && emit "default" "Default agent is $(c .defaultAgent). Pick another" "" "default " 0
+        [[ -z ${herd_repo_roots:-} && -n $last && root == ${last}* ]] && emit "root" "Add or remove folders that hold your repos" "" "root " 0
+        [[ -n $last && setup == ${last}* ]] && emit "setup" "Detect newly installed agents" "setup" "setup" 1
+      fi
+    fi
+  } | jq -Rn '{items: [inputs | split("\t") | {title: .[0], subtitle: .[1], arg: .[2], autocomplete: .[3], valid: (.[4] == "1"),
+      mods: {alt: {valid: true, arg: .[2], subtitle: "More options: choose the agent, repo, Space and more", variables: {herd_form_mode: "start"}}}}]}'
+}
+
+# ---- pull requests on any forge ------------------------------------------------------------
+# GitHub /pull/N, Gitea and Forgejo /pulls/N, GitLab /-/merge_requests/N, Bitbucket /pull-requests/N.
+PR_LINK='https?://[^[:space:]]+/(pull|pulls|merge_requests|pull-requests)/[0-9]+'
+
+pr_link() { [[ $1 =~ $PR_LINK ]] && print -r -- "$MATCH"; return 0; }
+
+pr_number() { # from a PR link, "#12" or a bare number
+  if [[ $1 =~ '/(pull|pulls|merge_requests|pull-requests)/([0-9]+)' ]]; then print -r -- "$match[2]"
+  elif [[ $1 =~ '(^|[[:space:]#])([0-9]+)($|[[:space:]])' ]]; then print -r -- "$match[2]"; fi
+  return 0
+}
+
+remote_web() { # origin as an https address: git@host:a/b.git and ssh://git@host:22/a/b.git → https://host/a/b
+  local u; u=$(git -C "$1" remote get-url origin 2>/dev/null) || return 0
+  u=${u%.git}
+  if [[ $u == *://* ]]; then u=${u#*://}; u=${u#*@}; u=${u/:[0-9]##\//\/}
+  else u=${u#*@}; u=${u/://}; fi
+  print -r -- "https://$u"
+}
+
+fetch_pr() { # fetch_pr <git dir> <number> [<local branch>]: tries GitHub/Gitea/Forgejo refs, then GitLab's
+  local ref
+  for ref in refs/pull/$2/head refs/merge-requests/$2/head; do
+    git -C "$1" fetch -q origin "+$ref${3:+:$3}" 2>/dev/null && { print -r -- "$ref"; return 0; }
+  done
+  die "couldn't fetch PR $2 from origin. GitHub, GitLab, Gitea and Forgejo publish PRs to git; Bitbucket doesn't."
+}
+
+# ---- the options form (Alfred UI) --------------------------------------------------------
+
+picker_items() { # picker_items < lines of text<TAB>value  →  [{"text":…,"value":…}]
+  jq -Rn '[inputs | split("\t") | {text: .[0], value: (.[1] // .[0])}]'
+}
+
+form_json() { # the form's fields, filled with this machine's agents, repos and Spaces
+  local task=${1:-} def r d defrepo defspace
+  def=$(c .defaultAgent)
+  local agents; agents=$({ print -r -- "$def"; c '.agents | keys[]' | grep -vxF -- "$def"; } | awk '{print $0 "\t" $0}' | picker_items)
+  defrepo=$(resolve_repo "" 2>/dev/null) || defrepo=$HOME
+  local repos; repos=$({
+      print -r -- "${defrepo:t}"$'\t'"$defrepo"
+      repo_dirs | while read -r d; do [[ $d == "$defrepo" ]] || print -r -- "${d:t}"$'\t'"$d"; done | sort -f
+    } | picker_items)
+  defspace=$(c .space)
+  local spaces; spaces=$({
+      case $defspace in '{repo}') print -r -- "Default: named after the repo"$'\t' ;; '{here}') print -r -- "Default: the Space on screen"$'\t' ;; *) print -r -- "Default: $defspace"$'\t' ;; esac
+      detect_backend 2>/dev/null && spaces_list 2>/dev/null | while IFS=$'\t' read -r n a; do print -r -- "$n"$'\t'"$(slug "$n")"; done
+      print -r -- "New Space…"$'\t'"__new__"
+    } | picker_items)
+  jq -n --arg task "$task" --argjson agents "$agents" --argjson repos "$repos" --argjson spaces "$spaces" '
+    def lbl($t): {type: "label", text: $t, constraints: {position: "right"}};
+    # Getter values must go through the action variables before finish can use them.
+    def start: {type: "json",
+      variables: {t: "{value:task.text}", a: "{value:agent.selected.value}", r: "{value:repo.selected.value}",
+                  s: "{value:space.selected.value}", ns: "{value:newspace.text}", n: "{value:name.text}", w: "{value:wt.checked}", p: "{value:pr.text}"},
+      src: {finish: {args: "{var:t}", variables: {herd_f_agent: "{var:a}", herd_f_repo: "{var:r}", herd_f_space: "{var:s}", herd_f_newspace: "{var:ns}",
+                                                  herd_f_name: "{var:n}", herd_f_wt: "{var:w}", herd_f_pr: "{var:p}"}}}};
+    {update: {relayout: true, ids: {herd_form: {components: [
+      lbl("Task"),    {type: "textarea", id: "task", text: $task, editable: true, bordertype: "bezel",
+                        textinsets: {horizontal: 4, vertical: 4}, constraints: {size: {height: 110}}},
+      lbl("Agent"),   {type: "picker", id: "agent", items: $agents, selected: $agents[0].value},
+      lbl("Repo"),    {type: "picker", id: "repo", items: $repos, selected: $repos[0].value},
+      lbl("Space"),   {type: "picker", id: "space", items: $spaces, selected: $spaces[0].value,
+                        events: [{triggers: "changed", action: {type: "script", src: "scripts/space", args: ["{value:space.selected.value}"]}}]},
+      # Shown only while "New Space…" is picked. A hidden field still keeps its row.
+      (lbl("New Space") + {id: "newspacelabel", hidden: true}),
+                      {type: "textfield", id: "newspace", hidden: true, placeholder: "What to call the new Space, e.g. Release work"},
+      lbl("Tab name"), {type: "textfield", id: "name", placeholder: "Optional. Name the tab, so you can message it with tell"},
+      lbl("Worktree"),{type: "checkbox", id: "wt", text: "Work on a new worktree and branch", checked: false},
+      lbl("Pull request"), {type: "textfield", id: "pr", placeholder: "Optional. A PR number or link to check out"},
+      {}, {type: "button", text: "Start", events: [{triggers: "actioned", action: start}]}
+    ]}}}}'
+}
+
+tell_form_json() { # the message form: a running agent and a message box
+  local agents
+  agents=$(running_agents | while IFS=$'\t' read -r id ag st wh cwd; do print -r -- "$wh · $(status_word $st)"$'\t'"$id"; done | picker_items)
+  [[ $agents != '[]' ]] || agents='[{"text":"No agents running","value":""}]'
+  jq -n --arg msg "${1:-}" --arg sel "${herd_form_agent:-}" --argjson agents "$agents" '
+    def lbl($t): {type: "label", text: $t, constraints: {position: "right"}};
+    def send: {type: "json", variables: {a: "{value:agent.selected.value}", m: "{value:msg.text}"},
+      src: {finish: {args: "{var:m}", variables: {herd_f_tell: "{var:a}"}}}};
+    {update: {relayout: true, ids: {herd_form: {components: [
+      lbl("Agent"),   {type: "picker", id: "agent", items: $agents,
+                        selected: (if any($agents[]; .value == $sel) then $sel else $agents[0].value end)},
+      lbl("Message"), {type: "textarea", id: "msg", text: $msg, editable: true, bordertype: "bezel",
+                        textinsets: {horizontal: 4, vertical: 4}, constraints: {size: {height: 160}}},
+      {}, {type: "button", text: "Send", events: [{triggers: "actioned", action: send}]}
+    ]}}}}'
+}
+
+# ---- agents, tell, tidy -------------------------------------------------------------
+
+# A 7th column is the agent that ⌥↩ opens the message form for; an 8th prefills the message.
+items() { jq -Rn '{items: [inputs | split("\t") | {title: .[0], subtitle: .[1], arg: .[2], autocomplete: .[3], valid: (.[4] == "1"), match: .[5]}
+  + (if (.[6] // "") != "" then {mods: {alt: {valid: true, arg: (.[7] // ""), subtitle: "Write a message to this agent in a form",
+      variables: {herd_form_mode: "tell", herd_form_agent: .[6]}}}} else {} end)]}'; }
+emit6() { print -r -- "$1"$'\t'"$2"$'\t'"$3"$'\t'"$4"$'\t'"$5"$'\t'"${6:-$1 $2}"$'\t'"${7:-}"$'\t'"${8:-}"; }
+
+running_agents() { # id<TAB>agent<TAB>status<TAB>where<TAB>cwd, the ones that need you first
+  detect_backend || die "Herdr isn't running"
+  if [[ $backend == tui ]]; then
+    herdr agent list | jq -r '.result.agents[] | [.name, .agent, (.agent_status // "unknown"), .name, (.cwd // "")] | @tsv'
+  else
+    hc ls | jq -r '.terminals[] | select(.state == "live" and .status != null) | [.address, .agent, .status, (.where // .address), .cwd] | @tsv'
+  fi | awk -F'\t' 'BEGIN { r["blocked"]=0; r["done"]=1; r["idle"]=2; r["working"]=3 } { print ($3 in r ? r[$3] : 4) "\t" $0 }' |
+    sort -t$'\t' -k1,1n -s | cut -f2-
+}
+
+status_word() {
+  case $1 in blocked) print "Needs you" ;; done) print "Finished" ;; idle) print "Idle" ;; working) print "Working" ;; *) print -r -- "$1" ;; esac
+}
+
+agents_filter() {
+  local id ag st wh cwd
+  running_agents | while IFS=$'\t' read -r id ag st wh cwd; do
+    emit6 "$wh" "$(status_word $st) · $ag · ${cwd:t}" ":focus $id" "$wh" 1 "$wh $st $ag ${cwd:t}" "$id"
+  done | items
+}
+
+focus_agent() {
+  detect_backend || die "Herdr isn't running"
+  if [[ $backend == tui ]]; then herdr agent focus "$1" >/dev/null; return; fi
+  open -a Herdr
+  local i; for i in 1 2 3 4 5; do herdr-app do agent.focus --terminal "$1" >/dev/null 2>&1 && return; sleep 1; done
+  die "couldn't show $1. Open Herdr and try again."
+}
+
+tab_of() { print -r -- "${1##* / }"; } # "Space / tab" → tab
+
+tell_filter() { # complete an agent by its tab name (or terminal id when names repeat), then take the message
+  local q=$1 target=${1%% *} msg="" id ag st wh cwd t key
+  [[ $q == *" "* ]] && msg=${q#* }
+  local rows=("${(@f)$(running_agents)}")
+  typeset -A seen
+  for r in $rows; do t=${(L)$(tab_of "${${(@ps:\t:)r}[4]}")}; seen[$t]=$(( ${seen[$t]:-0} + 1 )); done
+  for r in $rows; do
+    IFS=$'\t' read -r id ag st wh cwd <<<"$r"
+    t=$(tab_of "$wh"); key=$id; (( ${seen[${(L)t}]:-0} == 1 )) && key=$t
+    if [[ -n $msg ]]; then
+      [[ $target == "$id" || ${(L)target} == ${(L)key} ]] && emit6 "Send to $wh" "$msg" ":tell $id $msg" "$q" 1 "" "$id" "$msg"
+    elif [[ -z $target || ${(L)key} == ${(L)target}* || $id == $target* ]]; then
+      emit6 "$wh" "$(status_word $st) · $ag · Tab, then type your message. ⌥↩ for a longer one" "" "$key " 0 "$wh $id $ag" "$id"
+    fi
+  done | items
+}
+
+tell_agent() { # tell_agent <id> <message>
+  detect_backend || die "Herdr isn't running"
+  [[ -n ${2:-} ]] || die "type a message after the agent"
+  if [[ $backend == tui ]]; then herdr agent prompt "$1" "$2" >/dev/null
+  else env -u HC_TERMINAL_ID hc send "$1" "$2" >/dev/null; fi
+  print -r -- "Sent to $1"
+}
+
+wt_branch() { # the branch a worktree is on; a detached review worktree maps back to review/pr-<n>
+  local br; br=$(git -C "$1" rev-parse --abbrev-ref HEAD 2>/dev/null)
+  [[ $br == HEAD && ${1:t} == review-pr-<-> ]] && br=review/pr-${${1:t}#review-pr-}
+  print -r -- "$br"
+}
+
+herd_worktrees() { # dir<TAB>repo<TAB>branch<TAB>PR state, asking GitHub about every worktree at once
+  local d repo br tmp k=0
+  tmp=$(mktemp -d)
+  for d in $(home "$(c .worktreeRoot)")/*/*(N/); do
+    [[ -e $d/.git ]] || continue
+    repo=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || continue; repo=${repo:h}
+    br=$(wt_branch "$d"); (( ++k ))
+    print -r -- "$d"$'\t'"$repo"$'\t'"$br" > $tmp/$k
+    { cd "$repo" && gh pr view "${${br#review/pr-}:-HEAD}" --json state -q .state 2>/dev/null || print "NO PR"; } > $tmp/$k.state &
+  done
+  wait
+  for d in $tmp/<->(N); do print -r -- "$(<$d)"$'\t'"$(head -1 $d.state)"; done
+  rm -r "$tmp"
+}
+
+tidy_filter() {
+  local d repo br st
+  herd_worktrees | sort -t$'\t' -k4,4 | while IFS=$'\t' read -r d repo br st; do
+    case $st in
+      MERGED) emit6 "${d:t}" "PR merged · ${repo:t} · Enter removes the worktree, its branch and its tabs" ":tidy $d" "" 1 ;;
+      CLOSED) emit6 "${d:t}" "PR closed · ${repo:t} · Enter removes the worktree and its tabs, and keeps the branch" ":tidy $d" "" 1 ;;
+      *) emit6 "${d:t}" "${${(L)st}/no pr/no PR} · ${repo:t} · kept until its PR is merged or closed" "" "" 0 ;;
+    esac
+  done | items
+}
+
+tidy_one() { # tidy_one <worktree dir>
+  local d=$1 repo br t
+  [[ -d $d ]] || die "already gone: ${d:t}"
+  [[ -z $(git -C "$d" status --porcelain) ]] || die "${d:t} has uncommitted changes, so it's kept"
+  repo=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir); repo=${repo:h}
+  br=$(wt_branch "$d")
+  for t in ${(f)"$(hc ls 2>/dev/null | jq -r --arg d "$d" '.terminals[] | select(.cwd == $d or (.cwd | startswith($d + "/"))) | .address')"}; do
+    hc kill "$t" >/dev/null 2>&1; hc rm "$t" >/dev/null 2>&1
+  done
+  git -C "$repo" worktree remove "$d" || die "couldn't remove ${d:t}"
+  # A closed PR's branch may hold commits that were never pushed, so only merged branches go.
+  if [[ $br != HEAD ]] && (cd "$repo" && gh pr list --state merged --head "$br" --json number -q '.[0].number' 2>/dev/null) | grep -q .; then
+    git -C "$repo" branch -D "$br" >/dev/null 2>&1
+  fi
+  print -r -- "Removed ${d:t}"
+}
+
+case ${1:-} in
+  agents) agents_filter; exit ;;
+  tell) tell_filter "${2:-}"; exit ;;
+  tidy) tidy_filter; exit ;;
+  root|roots)
+    [[ -n ${herd_repo_roots:-} && -n ${2:-} ]] && die "your repo folders are set in Alfred: Configure Workflow → Repo folders"
+    case ${2:-} in
+      add) [[ -n ${3:-} ]] || die "usage: herd root add <folder>"
+        d=$(home "${*[3,-1]}"); [[ -d $d ]] || die "no folder at ${*[3,-1]}"
+        jq --arg d "$(tilde "$d")" '.repoRoots = ((.repoRoots // []) + [$d] | unique)' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+        print -r -- "herd: repo folders: $(c '.repoRoots | join(", ")')" ;;
+      rm|remove) [[ -n ${3:-} ]] || die "usage: herd root remove <folder>"
+        d="${*[3,-1]}"; [[ -d $(home "$d") ]] && d=$(tilde "$(home "$d")")
+        jq -e --arg d "$d" '.repoRoots | index($d)' "$CFG" >/dev/null || die "$d isn't a repo folder. Have: $(c '.repoRoots | join(", ") | if . == "" then "none" else . end')"
+        jq --arg d "$d" '.repoRoots -= [$d]' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+        print -r -- "herd: repo folders: $(c '.repoRoots | join(", ") | if . == "" then "none" else . end')" ;;
+      "") c '.repoRoots[]?' ;;
+      *) die "usage: herd root [add|remove <folder>]" ;;
+    esac; exit ;;
+  default) [[ -n ${herd_agent:-} ]] && die "your default agent is set in Alfred: Configure Workflow → Default agent"
+    [[ -n ${2:-} ]] || die "usage: herd default <agent>"
+    jq -e --arg a "$2" '.agents[$a]' "$CFG" >/dev/null || die "no agent '$2'. Have: $(c '.agents | keys | join(", ")')"
+    jq --arg a "$2" '.defaultAgent = $a' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"; print "herd: default agent is $2"; exit ;;
+  alfred) alfred "${2:-}"; exit ;;
+  --line) shift; set -- ${(s: :)1}; [[ ${1:-} == (setup|default|root|roots) ]] && exec "$SELF" "$@" ;;
+  form-json) if [[ ${herd_form_mode:-} == tell ]]; then tell_form_json "${2:-}"; else form_json "${2:-}"; fi; exit ;;
+  --form) # the options form's choices arrive as herd_f_* variables
+    local_task=${2:-}
+    if [[ -n ${herd_f_tell:-} ]]; then
+      [[ -n ${HERD_DRY:-} ]] && { print -ru2 -- "tell $herd_f_tell: $local_task"; exit; }
+      tell_agent "$herd_f_tell" "$local_task"; exit
+    fi
+    # With only a pull request, the agent is handed its link.
+    if [[ -z $local_task && -n ${herd_f_pr:-} ]]; then
+      local_task=$(pr_link "$herd_f_pr"); [[ -n $local_task ]] || local_task='{prurl}'
+    fi
+    [[ -n $local_task ]] || die "type a task, or give a pull request"
+    # The task goes through as typed: several lines, and no @ # % = + options read from it. The form has fields for those.
+    export HERD_TASK=$local_task
+    set -- ${HERD_DRY:+-n}
+    [[ -n ${herd_f_agent:-} ]] && set -- "$@" "@$herd_f_agent"
+    [[ -n ${herd_f_repo:-} ]] && set -- "$@" "#$herd_f_repo"
+    if [[ ${herd_f_space:-} == __new__ ]]; then
+      [[ -n ${${herd_f_newspace:-}// /} ]] || die "type a name for the new Space"
+      export HERD_SPACE_NAME=$herd_f_newspace # used as typed, not matched against existing Spaces
+    elif [[ -n ${herd_f_space:-} ]]; then set -- "$@" "%$herd_f_space"; fi
+    [[ -n ${herd_f_name:-} ]] && set -- "$@" "=$herd_f_name"
+    if [[ -n ${herd_f_pr:-} ]]; then export HERD_PR=$(pr_number "$herd_f_pr"); set -- "$@" +pr
+    elif [[ ${herd_f_wt:-} == (1|true) ]]; then set -- "$@" +wt; fi ;;
+  ""|-h|--help|help) sed -n '2,/^set /p' "$SELF" | grep '^#' | sed 's/^# \{0,1\}//'; exit ;;
+esac
+
+case ${1:-} in
+  :focus) focus_agent "$2"; exit ;;
+  :tell) tell_agent "$2" "${*[3,-1]}"; exit ;;
+  :tidy) tidy_one "${*[2,-1]}"; exit ;;
+esac
+
+dry=0; [[ ${1:-} == -n ]] && { dry=1; shift; }
+[[ -n ${HERD_DRY:-} ]] && dry=1
+agent=""; repoarg=""; spacearg=""; namearg=""; wt=""; words=()
+# @x and #x are herd's options only when x is one of your agents or repos. Anything else, like a Claude
+# subagent (@code-reviewer) or an issue (#12), stays in the task. @@x and ##x always pass through as @x and #x.
+known_agents=(${(f)"$(c '.agents | keys[]')"})
+for a in "$@"; do
+  case $a in
+    @@*|\#\#*) words+=("${a[2,-1]}") ;;
+    @?*) if (( ${known_agents[(Ie)${a#@}]} )); then agent=${a#@}; else words+=("$a"); fi ;;
+    \#?*) if ( resolve_repo "${a#\#}" ) >/dev/null 2>&1; then repoarg=${a#\#}; else words+=("$a"); fi ;;
+    +wt) wt=new ;;
+    +pr) wt=pr ;;
+    %*) spacearg=${a#%} ;;
+    \=?*) namearg=${a#=}; [[ $namearg == [A-Za-z0-9._-]## ]] || die "a tab name can use letters, digits, dots, dashes and underscores" ;;
+    +clip) words+=("$(pbpaste)") ;;
+    *) words+=("$a") ;;
+  esac
+done
+if [[ -n ${HERD_TASK:-} ]]; then # from the form: the first word may be a /skill or shortcut, the rest is kept as typed
+  HERD_TASK=${${HERD_TASK##[[:space:]]#}%%[[:space:]]#}
+  first=${HERD_TASK%%[[:space:]]*}; rest=${${HERD_TASK#$first}##[[:space:]]#}
+  words=("$first"); [[ -n $rest ]] && words+=("$rest")
+fi
+(( $#words )) || die "nothing to do. Try: herd fix the failing test"
+
+# A /skill later in the line moves to the front, so "what is the weather /grill-me" runs grill-me on the rest.
+# Only a skill you have counts, so a path like /tmp/log stays in the task.
+if [[ -z ${HERD_TASK:-} && $words[1] != /* && -n ${(M)words:#/?*} ]]; then
+  known_skills=(${(f)"$(skills "$(resolve_repo "$repoarg" 2>/dev/null || print -r -- $HOME)" | cut -f1)"})
+  for i in {1..$#words}; do
+    [[ $words[i] == /?* ]] && (( ${known_skills[(Ie)${words[i]#/}]} )) && { words=("$words[i]" "${(@)words[1,i-1]}" "${(@)words[i+1,-1]}"); break; }
+  done
+fi
+kind=task; label=task; sc=""
+if [[ $words[1] == /* ]]; then
+  kind=skill; skill=${words[1]#/}; label=$skill; shift words
+elif jq -e --arg s "$words[1]" '.shortcuts[$s]' <<<"$CONF" >/dev/null; then
+  kind=shortcut; sc=$words[1]; label=$sc; shift words
+fi
+args="${words[*]}"
+[[ -n ${HERD_TASK:-} && $kind == task ]] && args=$HERD_TASK
+
+agent=${agent:-$(c --arg s "$sc" '.shortcuts[$s].agent // .defaultAgent')}
+jq -e --arg a "$agent" '.agents[$a]' <<<"$CONF" >/dev/null || die "no agent '$agent'. Have: $(c '.agents | keys | join(", ")'). Run 'herd setup' after installing one."
+# A shortcut field is a plain value, or an object keyed by agent name with a "default".
+field() { c --arg s "$sc" --arg a "$agent" --arg f "$1" '.shortcuts[$s][$f] // empty | if type == "object" then (.[$a] // .default) else . end // empty'; }
+
+repo=$(resolve_repo "${repoarg:-$(field repo)}")
+wt=${wt:-$(field worktree)}
+[[ -z $wt && -n $(pr_link "$args") ]] && wt=pr
+wt=${wt:-none}
+keys=$(print -r -- "$args" | grep -oE '[A-Z][A-Z0-9]+-[0-9]+' | sort -u | paste -sd- - || true)
+slug=$(print -r -- "${keys:-$args}" | tr -cs 'A-Za-z0-9' '-' | tr 'A-Z' 'a-z' | cut -c1-30); slug=${slug#-}; slug=${slug%-}
+tabname=${namearg:-$label${slug:+-$slug}}
+wtroot=$(home "$(c .worktreeRoot)")/${repo:t}
+dir=$repo; pr=""; prurl=""
+
+case $wt in
+  none) ;;
+  pr)
+    pr=${HERD_PR:-$(pr_number "$args")}
+    [[ -n $pr ]] || die "+pr needs a PR number or link in the task"
+    dir=$wtroot/review-pr-$pr; tabname=${namearg:-$label-pr-$pr}
+    ref=refs/pull/$pr/head
+    if (( ! dry )); then
+      if [[ -d $dir ]]; then # git refuses to fetch into a branch that a worktree has checked out
+        ref=$(fetch_pr "$dir" "$pr") && git -C "$dir" checkout -q --detach FETCH_HEAD
+      else
+        ref=$(fetch_pr "$repo" "$pr" "review/pr-$pr") && git -C "$repo" worktree add -q "$dir" "review/pr-$pr"
+      fi
+    fi
+    prurl=$(pr_link "$args")
+    if [[ -z $prurl ]]; then
+      web=$(remote_web "$repo")
+      case $ref:$web in
+        refs/merge-requests/*) prurl=$web/-/merge_requests/$pr ;;
+        *github*) prurl=$web/pull/$pr ;;
+        *) prurl=$web/pulls/$pr ;;
+      esac
+    fi ;;
+  new)
+    base=$(git -C "$repo" symbolic-ref -q --short refs/remotes/origin/HEAD || echo origin/main)
+    branch=$tabname-$(date +%m%d%H%M); dir=$wtroot/$branch
+    if (( ! dry )); then
+      git -C "$repo" fetch -q origin "${base#origin/}" && git -C "$repo" worktree add -q -b "$branch" "$dir" "$base"
+    fi ;;
+  *) die "worktree must be none, new or pr (got '$wt')" ;;
+esac
+if (( ! dry )) && [[ $dir != "$repo" ]]; then
+  for f in ${(f)"$(c '.copyFiles[]?')"}; do [[ -e $repo/$f && ! -e $dir/$f ]] && cp -R "$repo/$f" "$dir/$f"; done
+fi
+
+case $kind in
+  skill) tk=$(c --arg a "$agent" '.agents[$a].cmd[0]'); tk=${tk:t}
+    prompt=$(c --arg a "$agent" --arg g "${SKILL_TPL[$tk]:-$GENERIC_SKILL}" '.agents[$a].skill // $g'); prompt=${prompt//\{skill\}/$skill} ;;
+  shortcut) prompt=$(field prompt); [[ -n $prompt ]] || prompt='{args}' ;;
+  task) prompt='{args}' ;;
+esac
+prompt=${prompt//\{args\}/$args}; prompt=${prompt//\{pr\}/$pr}; prompt=${prompt//\{prurl\}/${prurl:-$args}}
+prompt=${prompt%%[[:space:]]#}
+
+# Each agent's cmd, with "{prompt}" filled in if it takes the prompt as an argument.
+# Otherwise the backend delivers the prompt once the agent is ready.
+cmdjson=$(jq -c --arg a "$agent" --arg p "$prompt" '.agents[$a].cmd | map(if . == "{prompt}" then $p else . end)' <<<"$CONF")
+bin=$(jq -r '.[0]' <<<"$cmdjson")
+command -v "$bin" >/dev/null || die "can't find '$bin'. Install it, or change Default agent in Configure Workflow."
+inline=0; jq -e --arg a "$agent" '.agents[$a].cmd | index("{prompt}")' <<<"$CONF" >/dev/null && inline=1
+envpath=$(c .path)
+spacename=$(field space); spacename=${spacename:-$(c .space)}; spacename=${spacename//\{repo\}/${repo:t}}
+# Herdr names: a lowercase letter first, then up to 31 of a-z 0-9 - _
+if [[ -n $namearg ]]; then hname=${${${(L)namearg}//[^a-z0-9_-]/-}[1,32]}; [[ $hname == [a-z]* ]] || hname=t-${hname[1,30]}
+else hname=herd-${${(L)tabname//[^a-zA-Z0-9-]/-}[1,20]}-$(date +%H%M%S); fi
+SPACES=${CFG:h}/spaces.json
+
+run() { if (( dry )); then print -ru2 -- "${(q-)@}"; else "$@"; fi; }
+# Steps that wait for the agent run in the background, so Alfred returns at once.
+later() { if (( dry )); then print -ru2 -- "(background) $*"; else { eval "$*"; } >/dev/null 2>&1 &! fi; }
+
+detect_backend || die "Herdr isn't running. Open Herdr desktop, or start the herdr TUI."
+if [[ -n $namearg ]] && running_agents | cut -f4 | while read -r w; do tab_of "$w"; done | grep -qixF -- "$namearg"; then
+  die "an agent called $namearg is already running. Pick another name."
+fi
+[[ -n $spacearg ]] && spacename=$(pick_space "$spacearg")
+[[ $spacename == "{here}" ]] && spacename=$(pick_space here)
+[[ -n ${HERD_SPACE_NAME:-} ]] && spacename=$HERD_SPACE_NAME
+
+case $backend in
+  app) # Herdr desktop window
+    spaces=$(herdr-app ls | jq -c '[.spaces[] | {(.name): .id}] | add // {}')
+    print -r -- "$spaces" > "$SPACES"  # lets the core backend find Spaces while the window is closed
+    space=$(jq -r --arg n "$spacename" '.[$n] // empty' <<<"$spaces")
+    argv=$(jq -c --arg path "$envpath" '["/usr/bin/env", "PATH=\($path)"] + .' <<<"$cmdjson")
+    task=(--task "$prompt"); (( inline )) && task=()
+    if [[ -n $space ]]; then
+      run herdr-app do tab.new --space "$space" --name "$tabname" --folder "$dir" --argv "$argv" "${task[@]}" >/dev/null
+    else
+      run herdr-app do space.new --name "$spacename" --tab "$tabname" --folder "$dir" --argv "$argv" "${task[@]}" >/dev/null
+    fi
+    where="$tabname in $spacename" ;;
+  core) # herdr-core with the window closed. Terminals show in their Space when the window opens.
+    space=$(jq -r --arg n "$spacename" '.[$n] // empty' "$SPACES" 2>/dev/null || true)
+    label=(); [[ -n $space ]] && label=(--label "herdr.space=$space")
+    run hc run --bg --no-parent --outlive-parent --no-notify --name "$hname" --cwd "$dir" "${label[@]}" \
+      -- /usr/bin/env "PATH=$envpath" "${(@f)$(jq -r '.[]' <<<"$cmdjson")}" >/dev/null
+    (( inline )) || later "hc wait ${(q)hname} --timeout 300 && env -u HC_TERMINAL_ID hc send ${(q)hname} ${(q)prompt}"
+    where="$hname"; [[ -n $space ]] && where+=" in $spacename" || where+=" (not in a Space yet: open Herdr desktop once, or use hc attach $hname)" ;;
+  tui) # the herdr terminal server
+    ws=$(herdr workspace list | jq -r --arg n "$spacename" '[.result.workspaces[] | select(.label == $n)][0].workspace_id // empty')
+    if (( dry )); then pane='<new-pane>'; run herdr tab create --workspace "${ws:-<new>}" --cwd "$dir" --label "$tabname" --no-focus
+    elif [[ -n $ws ]]; then
+      pane=$(herdr tab create --workspace "$ws" --cwd "$dir" --label "$tabname" --no-focus | jq -r '.result.root_pane.pane_id')
+    else
+      pane=$(herdr workspace create --cwd "$dir" --label "$spacename" --no-focus | jq -r '.result.root_pane.pane_id')
+    fi
+    bin=${bin:t}; rest=(${(f)"$(jq -r '.[1:][]' <<<"$cmdjson")"})
+    kinds=(${(s:, :)"$(herdr agent start --help 2>/dev/null | sed -n 's/.*possible values: \(.*\)\]/\1/p')"})
+    if (( ${kinds[(Ie)$bin]} )); then # Herdr knows this agent: it waits for readiness itself
+      step="herdr agent start ${(q)hname} --kind ${(q)bin} --pane ${(q)pane} --timeout 120000 -- ${(j: :)${(q)rest[@]}}"
+      (( inline )) || step+=" && herdr agent prompt ${(q)hname} ${(q)prompt}"
+    else # unknown agent: run it in the shell and type the prompt after a pause
+      step="herdr pane run ${(q)pane} ${(q)${(j: :)${(q)${(@f)$(jq -r '.[]' <<<"$cmdjson")}}}}"
+      (( inline )) || step+=" && sleep $(c '.tuiPromptDelay // 5') && herdr pane send-text ${(q)pane} ${(q)prompt} && herdr pane send-keys ${(q)pane} enter"
+    fi
+    later "$step"
+    where="$tabname in $spacename" ;;
+  *) die "backend must be auto, app, core or tui (got '$backend')" ;;
+esac
+(( dry )) || print -r -- "Started $agent: $where"

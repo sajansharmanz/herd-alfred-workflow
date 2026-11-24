@@ -1,0 +1,76 @@
+{
+  "bundleid": "local.herd.launcher.form",
+  "variablesconfig": {
+    "herd_form_task": {
+      "src": "args[0]",
+      "default": ""
+    },
+    "herd_agent": {
+      "src": "variable",
+      "scriptenv": true
+    },
+    "herd_repo_roots": {
+      "src": "variable",
+      "scriptenv": true
+    },
+    "herd_default_repo": {
+      "src": "variable",
+      "scriptenv": true
+    },
+    "herd_space": {
+      "src": "variable",
+      "scriptenv": true
+    },
+    "herd_backend": {
+      "src": "variable",
+      "scriptenv": true
+    },
+    "herd_form_mode": {
+      "src": "variable",
+      "default": "",
+      "scriptenv": true
+    },
+    "herd_form_agent": {
+      "src": "variable",
+      "default": "",
+      "scriptenv": true
+    }
+  },
+  "window": {
+    "title": "herd",
+    "padding": 16,
+    "size": {
+      "width": 560,
+      "height": 480
+    },
+    "root": {
+      "type": "view",
+      "layout": "stack",
+      "events": [
+        {
+          "triggers": "preload",
+          "action": {
+            "type": "script",
+            "src": "scripts/fill",
+            "args": "{var:herd_form_task}"
+          }
+        }
+      ],
+      "components": [
+        {
+          "type": "view",
+          "id": "herd_form",
+          "layout": "form",
+          "spacing": 8,
+          "components": [
+            {
+              "type": "label",
+              "text": "Loading…"
+            },
+            {}
+          ]
+        }
+      ]
+    }
+  }
+}

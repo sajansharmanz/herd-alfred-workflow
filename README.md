@@ -1,0 +1,309 @@
+# herd
+
+**Start a coding agent on a task from Alfred. It opens in its own Herdr tab, and can work on its own git worktree.**
+
+Type `herd fix the flaky login test` in Alfred and press Enter. A new tab opens in [Herdr](https://herdr.dev), your coding agent starts, and the task is already typed in. You carry on with what you were doing.
+
+```
+herd fix the flaky login test
+herd /code-review 5281 +pr
+herd tidy up the README #website +wt @codex
+herd why is the queue backing up %here
+```
+
+## Why use it
+
+Starting an agent on a side task usually means opening a terminal, finding the repo, maybe making a worktree, starting the agent, then pasting the task in. `herd` does all of that from one line in Alfred.
+
+- **Use any agent.** Claude Code, Codex, opencode, Gemini CLI, pi, Amp, Cursor, Aider, Goose, or anything else that runs in a terminal. Type its command as your default, and switch for one task with `@codex`.
+- **Use any repo.** Tell it where your repos live, then pick one with `#name`. Alfred completes the name as you type.
+- **Run your skills.** Type `/` to list the skills and slash commands in the repo and in your global folders, with their descriptions. Each agent gets the request in the form it understands.
+- **Keep work apart.** Give the task its own worktree and branch, or paste a pull request link to check it out for review.
+- **No syntax to learn.** Set a hotkey that opens a form with every option, or type shortcuts like `@codex` once you know them.
+- **Choose where it lands.** Tasks open in a Herdr Space named after the repo, or the one you pick with `%space`.
+- **Keep track of them.** See which agents need you, message one without finding its tab, and clear away finished worktrees.
+
+## What you need
+
+- macOS with **Alfred 6 and the [Powerpack](https://www.alfredapp.com/powerpack/)**
+- **[Herdr](https://herdr.dev)**: the desktop app, its background core, or the terminal UI
+- **jq**: included in macOS 15 and later. On older versions, `brew install jq`.
+- **git**
+- **[GitHub CLI](https://cli.github.com) (`gh`)**, signed in, for `tidy`, which only works with GitHub. Checking out pull requests also works with GitLab and others (see below).
+- **At least one coding agent** that runs in a terminal
+
+## Words used here
+
+| Word | Meaning |
+|---|---|
+| **Agent** | A program that writes code for you in a terminal, such as Claude Code or Codex. |
+| **Herdr** | An app that runs agents in tabs, so you can watch several at once. |
+| **Space** | A group of tabs in Herdr, such as one per project. |
+| **Repo** | A project folder kept in git. |
+| **Worktree** | A second copy of a repo on its own branch. The agent works there, so its changes don't mix with yours. |
+| **Pull request (PR)** | A proposed change, waiting for review on GitHub or a similar site. |
+| **Skill** | Saved instructions an agent can follow, started with `/` and its name, such as `/code-review`. |
+
+## Install
+
+1. Download `herd.alfredworkflow` and double-click it.
+2. Fill in the form Alfred shows, then click **Import**.
+3. Optional, and recommended: set a hotkey for the form. In Alfred Preferences → Workflows → herd, double-click the **Hotkey** box and press the keys you want, such as ⌃⌥H. Alfred doesn't import hotkeys, so every user sets their own.
+
+| Field | What it's for |
+|---|---|
+| **Default agent** | The command that starts your agent, such as `claude`, `codex`, `opencode` or `pi`. Add flags if you like: `claude --model opus`. Leave it blank to use the first agent `herd` finds. |
+| **Repo folders** | One per line: a folder that holds your repos, such as `~/repos`, or a single repo. `#name` picks a repo from these. |
+| **Default repo** | The repo to use unless you type `#repo`. A name from your repo folders, or a full path. |
+| **Herdr Space** | Where tabs open unless you type `%space`. `{repo}` uses the repo's name, `{here}` uses the Space on screen, or give a fixed name. |
+| **Herdr** | Which Herdr to use. Leave it on Auto to use whichever is running. |
+
+You can change these at any time in Alfred Preferences → Workflows → herd → **Configure Workflow**.
+
+## Using it
+
+Open Alfred and type `herd` followed by a space.
+
+### A task
+
+Type what you want done and press Enter:
+
+```
+herd add a loading state to the settings page
+```
+
+A notification confirms it started, or says why it couldn't.
+
+### The form
+
+Open it any of these ways:
+
+- **Your hotkey.** Any text you have selected becomes the task, so you can select an error, a ticket or a paragraph of a spec, press the hotkey, and start.
+- **⌥↩ in Alfred.** Type a task after `herd`, then press ⌥↩ instead of ↩. The form opens with your task filled in.
+- **Universal Actions.** Select text or a link anywhere, open Alfred's Universal Actions, and pick **Start an agent task**.
+
+| Field | What it does |
+|---|---|
+| **Task** | What the agent should do. It can run over several lines, so you can paste a log or a list of steps. To run a skill, make it the first word. |
+| **Agent** | Which agent to use. Your default is first. |
+| **Repo** | Which repo to work in. Your default repo is first, then every repo in your repo folders. |
+| **Space** | Which Herdr Space the tab opens in. Pick **New Space…** to type a name for a new one. |
+| **Tab name** | A name for the agent's tab, so you can message it later with `tell`. |
+| **Worktree** | Tick to work on a new worktree and branch. |
+| **Pull request** | A PR number or link to check out on its own worktree. With no task, the agent is handed the PR's link. |
+
+Press **Start**. In the Task box, Return starts a new line. You don't need to remember any symbols. The form is built with Alfred 6's [Alfred UI](https://www.alfredapp.com/help/alfredui/).
+
+A pull request link in the task is checked out automatically, with or without the form:
+
+```
+herd review https://github.com/acme/app/pull/1234
+herd review https://gitlab.example.com/team/app/-/merge_requests/56
+herd review https://codeberg.org/acme/app/pulls/78
+```
+
+| Site | Link | Checked out |
+|---|---|---|
+| GitHub | `…/pull/12` | Yes |
+| GitLab, including self-hosted | `…/-/merge_requests/12` | Yes |
+| Gitea and Forgejo, including Codeberg | `…/pulls/12` | Yes |
+| Bitbucket | `…/pull-requests/12` | No. Bitbucket doesn't publish pull requests to git, so check out the PR's branch instead. |
+
+The pull request is fetched from the repo's remote, `origin`. So a plain number such as `+pr 12` works on these sites too.
+
+### A skill
+
+Type `/` to see your skills and slash commands. It works anywhere in the line. Press Tab to pick one and add more words, or Enter to run it as it is:
+
+```
+herd /code-review 5281
+herd /fix-issue https://github.com/acme/app/issues/12
+```
+
+### Shortcuts for the form
+
+Once you know the form, you can skip it by typing its options into the line. Add any of these anywhere. Alfred completes `@`, `#` and `%` as you type.
+
+| Option | Effect | Example |
+|---|---|---|
+| `@agent` | Use a different agent for this task. Only your agents count: `@code-reviewer` or any other name stays in the task, so Claude subagents still work. | `@codex` |
+| `#repo` | Use a different repo. Only your repos count: `#12` stays in the task. | `#website`, `#~/code/app` |
+| `%space` | Open in a different Herdr Space. Partial names work. `%here` is the Space on screen. A name that matches none makes a new Space; use `_` for a space, as in `%release_work`. | `%reviews` |
+| `=name` | Name the tab, so you can find it and message it later with `tell name`. Letters, digits, dots, dashes and underscores. With `+wt`, the branch is named after it too. | `=login` |
+| `+wt` | Work on a new worktree and branch | |
+| `+pr` | Check out the pull request named in the task, on its own worktree. A PR link does this without `+pr`. | `+pr 5281` |
+| `+clip` | Add what's on the clipboard to the task | `herd /fix-issue +clip` |
+| `@@` `##` | Keep an `@` or `#` word in the task even when it matches an agent or repo | `ask @@codex what it thinks` |
+
+### Commands
+
+| Type | Effect |
+|---|---|
+| `herd default ` | Choose the default agent, if the form's Default agent is blank |
+| `herd root add ~/repos` | Add a repo folder, if the form's Repo folders is blank |
+| `herd root ` | List repo folders and remove one |
+| `herd setup` | Pick up agents installed since you last ran it |
+
+## Keeping track of your agents
+
+Three more keywords come with the workflow.
+
+### `agents`: what needs you
+
+Lists every running agent, with the ones waiting on you first: **Needs you**, then **Finished**, **Idle** and **Working**. Type to filter by Space, tab or repo. Enter brings Herdr forward on that agent's tab. ⌥↩ writes it a message.
+
+### `tell`: message an agent
+
+Type `tell`, pick an agent and press Tab, then type your message. Agents are completed by their tab name, or by their terminal ID (such as `t32`) where two tabs share a name:
+
+```
+herd fix the login flow =login +wt
+tell login also check the session timeout
+```
+
+The agent gets it as if you'd typed it in its tab.
+
+For a longer message, press **⌥↩** on an agent, in `tell` or in `agents`. A form opens with the running agents and a message box, so you can write several lines or paste a log before pressing **Send**.
+
+### `tidy`: clear finished worktrees
+
+Lists the worktrees in `~/.herdr/worktrees` with the state of their pull request. Enter on one whose PR is merged or closed:
+
+- closes any Herdr tabs open in it,
+- removes the worktree,
+- deletes its branch, if the PR was **merged**. A closed PR's branch is kept, because it may hold commits that were never pushed.
+
+A worktree with uncommitted changes is never removed. Worktrees with an open PR, or none, are shown but left alone.
+
+## How it works
+
+When you press Enter, `herd` works out the agent, repo, folder and prompt from what you typed and your settings. If you used the form, Start hands its choices to the same steps. Then it:
+
+1. makes a worktree, if you asked for one, and copies `.env` into it,
+2. opens a tab in the right Herdr Space and starts the agent there,
+3. hands the task to the agent once it's ready for input.
+
+Herdr does the hand-over, so `herd` doesn't need to know how each agent takes a prompt. That's why any interactive agent works.
+
+It works with all three ways of running Herdr:
+
+| Herdr | How the task is started |
+|---|---|
+| Desktop app | A named tab opens, and Herdr types the task in once the agent is ready. |
+| Core only (window closed) | The agent starts in the background and shows as a tab when you open the window. `herd` sends the task when the agent is ready. |
+| Terminal UI | A named tab opens. For agents the Terminal UI recognises, Herdr waits for the agent and sends the task. For others, `herd` types it in after a short pause. |
+
+## Skills and agents
+
+`herd` finds skills the way agents store them, so it works with any agent without a list of their folders:
+
+- a skill is a folder with a `SKILL.md`, such as `.opencode/skills/code-review/SKILL.md`,
+- a slash command is a Markdown file in a `commands` folder, such as `.claude/commands/deploy.md`.
+
+It looks inside the repo's hidden folders (`.claude`, `.agents`, `.opencode` and any others), then your home's. The repo's skills come first. Your global skills are remembered for an hour, so the list stays quick; `herd setup` rescans them straight away.
+
+Type `/` anywhere in the line to pick a skill. `herd what is the weather /grill-me` runs grill-me with the rest of the line. A `/` word that isn't one of your skills, like `/tmp/log`, stays in the task.
+
+Agents ask for skills in different ways, so `herd` adjusts the request:
+
+| Agent | `herd /code-review 5281` sends |
+|---|---|
+| Claude Code | `/code-review 5281` |
+| Codex | `$code-review 5281` |
+| pi | `/skill:code-review 5281` |
+| Others | `Use the code-review skill. 5281` |
+
+## More settings
+
+The form covers the everyday settings. For more, edit `~/.config/herd/config.json`, which `herd` creates the first time you use it. In Finder, press ⇧⌘G and go to `~/.config/herd`. A filled-in form field always wins over the same setting in this file.
+
+[`config.example.json`](config.example.json) shows every option. The two most useful are agent variants and shortcuts.
+
+### Agent variants
+
+Add the same agent with different flags, then pick it with `@`:
+
+```json
+"agents": {
+  "claude-opus": { "cmd": ["claude", "--model", "opus"], "skill": "/{skill} {args}" }
+}
+```
+
+```
+herd plan the billing migration @claude-opus
+```
+
+### Shortcuts
+
+A shortcut is a named task with its own prompt, worktree and Space. Any of its fields can differ by agent, so one shortcut can use a skill where an agent has it and plain words where it doesn't:
+
+```json
+"shortcuts": {
+  "review": {
+    "about": "Review a PR on its own worktree",
+    "space": "Reviews",
+    "worktree": "pr",
+    "prompt": {
+      "claude": "/code-review {prurl}",
+      "default": "Review {prurl}. List bugs by severity with file:line."
+    }
+  }
+}
+```
+
+```
+herd review 5281
+```
+
+### All settings
+
+| Setting | What it does | Default |
+|---|---|---|
+| `defaultAgent` | Agent used without `@agent` | First agent found |
+| `repoRoots` | Folders that hold your repos | None |
+| `defaultRepo` | Repo used without `#repo` | None (your home folder) |
+| `space` | Space used without `%space` | `{repo}` |
+| `backend` | `auto`, `app`, `core` or `tui` | `auto` |
+| `worktreeRoot` | Where worktrees go | `~/.herdr/worktrees` |
+| `copyFiles` | Files copied into new worktrees | `[".env"]` |
+| `skillDirs` | Extra folders to search for skills, for any kept outside a hidden folder | None |
+| `tuiSession` | Herdr Terminal UI session to use | The default session |
+| `tuiPromptDelay` | Seconds before typing into an agent the Terminal UI doesn't recognise | `5` |
+| `agents` | Your agents, their commands and how they take skills | Agents found |
+| `shortcuts` | Your shortcuts | None |
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| Nothing appears after `herd ` | In Alfred Preferences → Workflows → herd, turn on the debugger (the bug icon) and type `herd ` again. The error is usually that jq isn't installed. |
+| "Herdr isn't running" | Open Herdr, or start its Terminal UI. |
+| "can't find 'x'" | Your Default agent command isn't installed, or isn't on your login shell's PATH. Check the spelling in Configure Workflow, then type `herd setup`. |
+| "no agent 'x'" | Install the agent, then type `herd setup`. Or check the `@x` you typed. |
+| The hotkey opens the form without the text I selected | Alfred copies the selection with ⌘C, which some apps ignore. Copy it yourself and type it in, or use Universal Actions. |
+| The tab opens, then closes | The agent couldn't start. Type `herd setup` so `herd` finds where it's installed. |
+| The agent starts but never gets the task | Herdr couldn't tell when it was ready. In the settings file, add `"{prompt}"` to that agent's `cmd` to pass the task as an argument instead. |
+| The form doesn't open, or it opens in an odd place | Open the workflow in Alfred Preferences and double-click the **Alfred UI** object. Check its file is `herd.alfredui`, and try the other launch setting: inside Alfred or as its own window. |
+| The agent asks whether to trust the folder | Answer it once per folder. The task arrives after that. |
+| A skill isn't in the `/` list | A new global skill shows within the hour, or straight away after `herd setup`. A skill outside a hidden folder needs its folder in `skillDirs` in the settings file. |
+| A pull request won't check out | The task needs a PR number or link, and the PR must be in the repo's `origin`. Bitbucket pull requests can't be fetched this way. |
+| `tidy` shows nothing, or an error | It needs a GitHub repo and the GitHub CLI, signed in with `gh auth login`. |
+| A task opened with the window closed isn't in any Space | `herd` hadn't seen that Space yet. Open Herdr once, then run it again. |
+
+`herd` only deletes worktrees when you ask it to with `tidy`, and only once their pull request is merged or closed.
+
+## Working on herd
+
+The workflow is `herd` (a zsh script), `info.plist` (the Alfred workflow) and `herd.alfredui` (the options form). `herd.alfredui/scripts/fill` fills the form's lists when it opens. `herd.alfredui/scripts/space` shows the New Space box when you pick **New Space…**. The Start button hands the choices back as `herd_f_*` variables. Run `./build.sh` to pack it all into `herd.alfredworkflow`.
+
+`herd` refuses to run outside Alfred. To test it from a terminal, set `HERD_DEV=1`, and add `-n` to print the Herdr commands instead of running them:
+
+```sh
+HERD_DEV=1 ./herd -n fix the build +wt @codex
+```
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
+
+The icon is <a href="https://www.vecteezy.com/free-vector/sheep-icon">Sheep Icon Vectors by Vecteezy</a>, used under the Vecteezy Free License. It isn't covered by the MIT licence.

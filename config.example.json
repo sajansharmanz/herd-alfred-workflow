@@ -1,0 +1,35 @@
+{
+  "defaultAgent": "claude",
+  "repoRoots": ["~/repos", "~/code"],
+  "defaultRepo": "my-app",
+  "worktreeRoot": "~/.herdr/worktrees",
+  "space": "{repo}",
+  "copyFiles": [".env", ".env.local"],
+  "agents": {
+    "claude": { "cmd": ["claude"], "skill": "/{skill} {args}" },
+    "claude-opus": { "cmd": ["claude", "--model", "opus"], "skill": "/{skill} {args}" },
+    "codex": { "cmd": ["codex"], "skill": "${skill} {args}" },
+    "opencode": { "cmd": ["opencode"] },
+    "gemini": { "cmd": ["gemini", "-i", "{prompt}"] }
+  },
+  "shortcuts": {
+    "review": {
+      "about": "Review a PR on its own worktree",
+      "space": "Reviews",
+      "worktree": "pr",
+      "prompt": {
+        "claude": "/code-review {prurl}",
+        "default": "Review {prurl}. It is checked out here. List bugs by severity with file:line, then say whether it is safe to merge."
+      }
+    },
+    "fix": {
+      "about": "Fix an issue from its URL",
+      "space": "Bug Fixes",
+      "worktree": { "claude": "none", "default": "new" },
+      "prompt": {
+        "claude": "/fix-issue {args}",
+        "default": "Fix this bug at its root cause, add a test that fails without the fix, then open a draft PR: {args}"
+      }
+    }
+  }
+}
