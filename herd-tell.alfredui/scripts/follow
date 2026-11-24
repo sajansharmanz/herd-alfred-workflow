@@ -1,0 +1,4 @@
+#!/bin/zsh
+# The message form's Follow tickbox: whether new output scrolls the Recent box down.
+[[ ${1:-} == (1|true) ]] && print 1 > ${TMPDIR:-/tmp}/herd-form.follow || print 0 > ${TMPDIR:-/tmp}/herd-form.follow
+print '{}'

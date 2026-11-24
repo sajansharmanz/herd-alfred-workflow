@@ -56,7 +56,7 @@
 			</dict>
 			<dict>
 				<key>destinationuid</key>
-				<string>F1A00000-0000-4000-8000-000000000021</string>
+				<string>F1A00000-0000-4000-8000-000000000023</string>
 				<key>modifiers</key>
 				<integer>524288</integer>
 				<key>modifiersubtext</key>
@@ -79,7 +79,7 @@
 			</dict>
 			<dict>
 				<key>destinationuid</key>
-				<string>F1A00000-0000-4000-8000-000000000021</string>
+				<string>F1A00000-0000-4000-8000-000000000023</string>
 				<key>modifiers</key>
 				<integer>524288</integer>
 				<key>modifiersubtext</key>
@@ -119,6 +119,19 @@
 			<dict>
 				<key>destinationuid</key>
 				<string>F1A00000-0000-4000-8000-000000000003</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+		<key>F1A00000-0000-4000-8000-000000000023</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>F1A00000-0000-4000-8000-000000000022</string>
 				<key>modifiers</key>
 				<integer>0</integer>
 				<key>modifiersubtext</key>
@@ -468,6 +481,23 @@
 			<key>version</key>
 			<integer>1</integer>
 		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>launchmode</key>
+				<integer>0</integer>
+				<key>path</key>
+				<string>herd-tell.alfredui</string>
+				<key>stackview</key>
+				<true/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.userinterface.alfredui</string>
+			<key>uid</key>
+			<string>F1A00000-0000-4000-8000-000000000023</string>
+			<key>version</key>
+			<integer>1</integer>
+		</dict>
 	</array>
 	<key>readme</key>
 	<string>Start any coding agent on a task in Herdr, on its own worktree if you like.
@@ -486,58 +516,69 @@ Icon: [Sheep Icon Vectors by Vecteezy](https://www.vecteezy.com/free-vector/shee
 		<key>F1A00000-0000-4000-8000-000000000001</key>
 		<dict>
 			<key>xpos</key>
-			<real>40</real>
+			<real>40.0</real>
 			<key>ypos</key>
-			<real>40</real>
+			<real>40.0</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000002</key>
 		<dict>
 			<key>xpos</key>
-			<real>260</real>
+			<real>260.0</real>
 			<key>ypos</key>
-			<real>40</real>
+			<real>40.0</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000003</key>
 		<dict>
 			<key>xpos</key>
-			<real>480</real>
+			<real>480.0</real>
 			<key>ypos</key>
-			<real>40</real>
+			<real>40.0</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000011</key>
 		<dict>
 			<key>xpos</key>
-			<real>40</real>
+			<real>40.0</real>
 			<key>ypos</key>
-			<real>170</real>
+			<real>170.0</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000012</key>
 		<dict>
 			<key>xpos</key>
-			<real>40</real>
+			<real>40.0</real>
 			<key>ypos</key>
-			<real>300</real>
+			<real>300.0</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000014</key>
 		<dict>
 			<key>xpos</key>
-			<real>40</real>
+			<real>40.0</real>
 			<key>ypos</key>
-			<real>560</real>
+			<real>560.0</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000021</key>
 		<dict>
+			<key>note</key>
+			<string>The start form: every option for a new task</string>
 			<key>xpos</key>
-			<real>260</real>
+			<real>260.0</real>
 			<key>ypos</key>
-			<real>-90</real>
+			<real>-90.0</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000022</key>
 		<dict>
 			<key>xpos</key>
-			<real>480</real>
+			<real>480.0</real>
 			<key>ypos</key>
-			<real>-90</real>
+			<real>-90.0</real>
+		</dict>
+		<key>F1A00000-0000-4000-8000-000000000023</key>
+		<dict>
+			<key>note</key>
+			<string>The message form: an agent, its recent output, and a message box</string>
+			<key>xpos</key>
+			<integer>260</integer>
+			<key>ypos</key>
+			<integer>40</integer>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000031</key>
 		<dict>

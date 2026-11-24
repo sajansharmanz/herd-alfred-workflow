@@ -36,18 +36,12 @@
       "scriptenv": true
     }
   },
-  "pulse": {
-    "src": "scripts/pulse",
-    "interval": 2,
-    "intervalmode": "delay",
-    "now": false
-  },
   "window": {
     "title": "herd",
     "padding": 16,
     "size": {
       "width": 560,
-      "height": 560
+      "height": 352
     },
     "root": {
       "type": "view",

@@ -11,6 +11,8 @@ herd tidy up the README #website +wt @codex
 herd why is the queue backing up %here
 ```
 
+![Alfred showing herd with the task: fix the flaky login test](docs/screenshots/task.png)
+
 ## Why use it
 
 Starting an agent on a side task usually means opening a terminal, finding the repo, maybe making a worktree, starting the agent, then pasting the task in. `herd` does all of that from one line in Alfred.
@@ -77,6 +79,10 @@ A notification confirms it started, or says why it couldn't.
 
 ### The form
 
+The form has a field for every option, so there's nothing to remember.
+
+![The herd form, with fields for the task, agent, repo, Space, tab name, worktree, pull request and Show](docs/screenshots/form.png)
+
 Open it any of these ways:
 
 - **Your hotkey.** Any text you have selected becomes the task, so you can select an error, a ticket or a paragraph of a spec, press the hotkey, and start.
@@ -88,7 +94,7 @@ Open it any of these ways:
 | **Task** | What the agent should do. It can run over several lines, so you can paste a log or a list of steps. To run a skill, make it the first word. |
 | **Agent** | Which agent to use. Your default is first. |
 | **Repo** | Which repo to work in. Your default repo is first, then every repo in your repo folders. |
-| **Space** | Which Herdr Space the tab opens in. Pick **New Space…** to type a name for a new one. |
+| **Space** | Which Herdr Space the tab opens in. Pick **New Space…** and a box appears beside it for the new Space's name. |
 | **Tab name** | A name for the agent's tab, so you can message it later with `tell`. |
 | **Worktree** | Tick to work on a new worktree and branch. |
 | **Pull request** | A PR number or link to check out on its own worktree. With no task, the agent is handed the PR's link. |
@@ -122,9 +128,13 @@ herd /code-review 5281
 herd /fix-issue https://github.com/acme/app/issues/12
 ```
 
+![Alfred listing skills after herd /, each with its description and repo](docs/screenshots/skills.png)
+
 ### Shortcuts for the form
 
 Once you know the form, you can skip it by typing its options into the line. Add any of these anywhere. Alfred completes `@`, `#` and `%` as you type.
+
+![Alfred completing #acme to the matching repos](docs/screenshots/repo.png)
 
 | Option | Effect | Example |
 |---|---|---|
@@ -156,6 +166,8 @@ Three more keywords come with the workflow.
 
 Lists every running agent, with the ones waiting on you first: **Needs you** (red), then **Finished** (green), **Idle** (grey) and **Working** (orange). Each agent shows with its logo and a dot in that colour. An agent without a logo shows the herd sheep instead. Type to filter by Space, tab or repo. Enter brings Herdr forward on that agent's tab. ⌥↩ writes it a message.
 
+![The agents list: one agent needs you, one has finished, one is working and one is idle, each with its logo and a coloured dot](docs/screenshots/agents.png)
+
 ### `tell`: message an agent
 
 Type `tell`, pick an agent and press Tab, then type your message. Agents are completed by their tab name, or by their terminal ID (such as `t32`) where two tabs share a name:
@@ -167,12 +179,17 @@ tell login also check the session timeout
 
 The agent gets it as if you'd typed it in its tab.
 
+![Alfred with tell login-fix also check the session timeout, ready to send](docs/screenshots/tell.png)
+
 For a longer message, press **⌥↩** on an agent, in `tell` or in `agents`. A form opens with:
 
 - **Agent**: the running agents. Pick another one to switch.
-- **Recent**: the last 50 lines on that agent's screen, so you can see what you're replying to. It opens at the newest line and updates every 2 seconds while the agent works. Scroll up to read back, and it stays where you put it.
+- **Recent**: the last 50 lines on that agent's screen, so you can see what you're replying to. It opens at the newest line and updates every 2 seconds while the agent works.
+- **Follow new output**: while it's ticked, new lines scroll into view. Untick it to scroll back and read while the agent keeps working. Tick it again to jump to the newest line.
 - **Open in Herdr**: goes to the agent's tab, if you need more than 50 lines.
 - **Message**: write several lines or paste a log, then press **Send**.
+
+![The message form: the agent picker, its recent output, the Follow new output tickbox, Open in Herdr, and a message box with Send](docs/screenshots/message-form.png)
 
 ### `tidy`: clear finished worktrees
 
@@ -304,7 +321,7 @@ herd review 5281
 | The hotkey opens the form without the text I selected | Alfred copies the selection with ⌘C, which some apps ignore. Copy it yourself and type it in, or use Universal Actions. |
 | The tab opens, then closes | The agent couldn't start. Type `herd setup` so `herd` finds where it's installed. |
 | The agent starts but never gets the task | Herdr couldn't tell when it was ready. In the settings file, add `"{prompt}"` to that agent's `cmd` to pass the task as an argument instead. |
-| The form doesn't open, or it opens in an odd place | Open the workflow in Alfred Preferences and double-click the **Alfred UI** object. Check its file is `herd.alfredui`, and try the other launch setting: inside Alfred or as its own window. |
+| A form doesn't open, or it opens in an odd place | Open the workflow in Alfred Preferences and double-click the **Alfred UI** object for that form. The start form's file is `herd.alfredui` and the message form's is `herd-tell.alfredui`. Try the other launch setting: inside Alfred or as its own window. |
 | The agent asks whether to trust the folder | Answer it once per folder. The task arrives after that. |
 | A skill isn't in the `/` list | A new global skill shows within the hour, or straight away after `herd setup`. A skill outside a hidden folder needs its folder in `skillDirs` in the settings file. |
 | A pull request won't check out | The task needs a PR number or link, and the PR must be in the repo's `origin`. Bitbucket pull requests can't be fetched this way. |
@@ -322,12 +339,10 @@ herd review 5281
 |---|---|
 | `herd` | The zsh script that does the work |
 | `info.plist` | The Alfred workflow: keywords, hotkey, form and settings |
-| `herd.alfredui/ui.json` | The options form and the message form |
-| `herd.alfredui/scripts/fill` | Fills the form's lists when it opens |
-| `herd.alfredui/scripts/space` | Shows the New Space box when you pick **New Space…** |
-| `herd.alfredui/scripts/history` | Refreshes the Recent box when you pick another agent |
-| `herd.alfredui/scripts/pulse` | Runs every 2 seconds while the form is open, and refreshes Recent when the agent's screen changes |
+| `herd.alfredui/` | The start form. `scripts/fill` fills its lists when it opens, and `scripts/space` shows the New Space box when you pick **New Space…**. |
+| `herd-tell.alfredui/` | The message form. `scripts/fill` lists the running agents, `scripts/history` refreshes Recent when you pick another agent, `scripts/follow` remembers the Follow tickbox, and `scripts/pulse` runs every 2 seconds to show new output. |
 | `icons/` | The status icons. `make-icons.py` draws them. |
+| `docs/screenshots/` | The pictures in this README, taken with demo repos and agents |
 | `build.sh` | Packs everything into `herd.alfredworkflow` |
 | `scripts/next-version` | Works out the next version number from the commit messages |
 | `.github/workflows/release.yml` | Builds and publishes a release on every push to `master` |

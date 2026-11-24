@@ -1,0 +1,5 @@
+#!/bin/zsh
+# Runs every 2 seconds while the message form is open, and refreshes Recent when the agent's screen changes.
+export alfred_workflow_bundleid=${alfred_workflow_bundleid:-com.sajansharma.herd}
+export herd_form_mode=tell
+exec "${0:A:h}/../../herd" pulse-json

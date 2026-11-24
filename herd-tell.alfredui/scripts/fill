@@ -1,0 +1,5 @@
+#!/bin/zsh
+# Fills the message form with the running agents and the picked agent's recent output.
+export alfred_workflow_bundleid=${alfred_workflow_bundleid:-com.sajansharma.herd}
+export herd_form_mode=tell
+exec "${0:A:h}/../../herd" form-json "${1:-}"

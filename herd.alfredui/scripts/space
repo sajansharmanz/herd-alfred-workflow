@@ -1,4 +1,5 @@
 #!/bin/zsh
-# Shows the new Space name box while "New Space…" is picked.
-[[ ${1:-} == __new__ ]] && hide=false || hide=true
-print -r -- "{\"update\":{\"relayout\":true,\"ids\":{\"newspace\":{\"hidden\":$hide},\"newspacelabel\":{\"hidden\":$hide}}}}"
+# Shows the New Space name box beside the Space picker while "New Space…" is picked, narrowing the picker to fit.
+# Hidden, the box still takes its width in the row, so it shrinks to nothing too.
+if [[ ${1:-} == __new__ ]]; then hide=false; w=258; b=210; else hide=true; w=476; b=0; fi
+print -r -- "{\"update\":{\"relayout\":true,\"ids\":{\"newspace\":{\"hidden\":$hide,\"constraints\":{\"size\":{\"width\":$b}}},\"space\":{\"constraints\":{\"size\":{\"width\":$w}}}}}}"

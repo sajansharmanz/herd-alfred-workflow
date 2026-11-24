@@ -113,10 +113,17 @@ skill_files() { # skill_files <dir>...
     -o \( -name SKILL.md -o -path '*/command*/*.md' \) -print 2>/dev/null
 }
 
+skill_description() { # the description from a skill's front matter, joining a multi-line (| or >) value into one line
+  awk '/^description:/ { v = $0; sub(/^description:[ \t]*/, "", v)
+         if (v ~ /^[|>][-+]?$/) { block = 1; next } print v; exit }
+       block && /^[ \t]/ { sub(/^[ \t]+/, ""); out = out (out == "" ? "" : " ") $0; next }
+       block { print out; exit }' "$1" | tr -d '"' | cut -c1-140
+}
+
 skill_rows() { # name<TAB>description for each skill file on stdin
   local f
   while read -r f; do
-    print -r -- "${${f:#*/SKILL.md}:+${f:t:r}}${${(M)f:#*/SKILL.md}:+${f:h:t}}"$'\t'"$(sed -n 's/^description: *//p' $f | head -1 | tr -d '"' | cut -c1-140)"
+    print -r -- "${${f:#*/SKILL.md}:+${f:t:r}}${${(M)f:#*/SKILL.md}:+${f:h:t}}"$'\t'"$(skill_description $f)"
   done
 }
 
@@ -290,11 +297,11 @@ form_json() { # the form's fields, filled with this machine's agents, repos and 
                         textinsets: {horizontal: 4, vertical: 4}, constraints: {size: {height: 110}}},
       lbl("Agent"),   {type: "picker", id: "agent", items: $agents, selected: $agents[0].value},
       lbl("Repo"),    {type: "picker", id: "repo", items: $repos, selected: $repos[0].value},
-      lbl("Space"),   {type: "picker", id: "space", items: $spaces, selected: $spaces[0].value,
-                        events: [{triggers: "changed", action: {type: "script", src: "scripts/space", args: ["{value:space.selected.value}"]}}]},
-      # Shown only while "New Space…" is picked. A hidden field still keeps its row.
-      (lbl("New Space") + {id: "newspacelabel", hidden: true}),
-                      {type: "textfield", id: "newspace", hidden: true, placeholder: "What to call the new Space, e.g. Release work"},
+      # The New Space box sits beside the picker in one row, so showing it never leaves a blank row.
+      lbl("Space"),   {type: "view", layout: "inline", align: "west", spacing: 8, constraints: {size: {width: 476}}, components: [
+                        {type: "picker", id: "space", items: $spaces, selected: $spaces[0].value, constraints: {size: {width: 476}},
+                         events: [{triggers: "changed", action: {type: "script", src: "scripts/space", args: ["{value:space.selected.value}"]}}]},
+                        {type: "textfield", id: "newspace", hidden: true, placeholder: "Name, e.g. Release work", constraints: {size: {width: 0}}}]},
       lbl("Tab name"), {type: "textfield", id: "name", placeholder: "Optional. Name the tab, so you can message it with tell"},
       lbl("Worktree"),{type: "checkbox", id: "wt", text: "Work on a new worktree and branch", checked: false},
       lbl("Pull request"), {type: "textfield", id: "pr", placeholder: "Optional. A PR number or link to check out"},
@@ -320,13 +327,34 @@ agent_history() { # agent_history <id>: the last lines on the agent's screen, wi
 FORM_STATE=${TMPDIR:-/tmp}/herd-form # the agent the message form shows, and a hash of what it last showed
 
 history_json() { # history_json <id> [--if-changed]: the update that shows an agent's recent screen in the message form
-  local h sum; h=$(agent_history "$1"); h=${h:-Nothing on screen yet.}
+  local h sum add
+  h=$(agent_history "$1"); h=${h:-Nothing on screen yet.}
   sum=$(print -r -- "$1$h" | md5 -q)
-  [[ ${2:-} == --if-changed && -f $FORM_STATE.sum && $(<$FORM_STATE.sum) == $sum ]] && { print '{}'; return; }
-  print -r -- "$1" > $FORM_STATE.agent; print -r -- "$sum" > $FORM_STATE.sum
-  # A new agent starts at the bottom, like a terminal. A refresh of the same agent leaves the scroll to "auto".
-  jq -n --arg h "$h" --argjson same "$([[ ${2:-} == --if-changed ]] && print true || print false)" \
-    '{update: {ids: {history: {text: $h}}}} + (if $same then {} else {functions: {ids: {history: "scrollbottom"}}} end)'
+  if [[ ${2:-} == --if-changed && -f $FORM_STATE.sum ]]; then
+    [[ $(<$FORM_STATE.sum) == $sum ]] && { print '{}'; return; }
+    # Send only the lines added since last time, so the box keeps its place. Alfred can't tell us where you've
+    # scrolled to, so the form's Follow tickbox decides whether new lines pull the view down.
+    add=$(print -r -- "$h" | new_lines $FORM_STATE.text)
+  fi
+  print -r -- "$1" > $FORM_STATE.agent; print -r -- "$sum" > $FORM_STATE.sum; print -r -- "$h" > $FORM_STATE.text
+  [[ ${2:-} == --if-changed && -z ${add:-} ]] && { print '{}'; return; } # only older lines scrolled away
+  if [[ -n ${add:-} && $add != __REPLACE__ ]]; then
+    jq -n --arg h $'\n'"$add" --arg scroll "$([[ $(cat $FORM_STATE.follow 2>/dev/null) == 0 ]] && print none || print end)" \
+      '{update: {ids: {history: {text: $h, behaviour: {mode: "append", scroll: $scroll}}}}}'
+  else # a new agent, or a redrawn screen: start at the bottom, like a terminal
+    jq -n --arg h "$h" '{update: {ids: {history: {text: $h, behaviour: {mode: "replace", scroll: "end"}}}}}'
+  fi
+}
+
+new_lines() { # new_lines <old file> < new text: the lines after where the old text's last three lines reappear
+  awk 'NR == FNR { if ($0 != "") last[++n] = $0; next }
+       { line[++m] = $0; if ($0 != "") at[++k] = m } # at[]: where each non-blank line sits
+       END {
+         if (n < 3) { print "__REPLACE__"; exit }
+         for (i = k - 2; i >= 1; i--) if (line[at[i]] == last[n-2] && line[at[i+1]] == last[n-1] && line[at[i+2]] == last[n]) break
+         if (i < 1) { print "__REPLACE__"; exit }
+         for (j = at[i+2] + 1; j <= m; j++) print line[j]
+       }' "$1" -
 }
 
 pulse_json() { # every 2 seconds while the form is open: refresh the message form's Recent box if the agent's screen changed
@@ -340,7 +368,7 @@ tell_form_json() { # the message form: a running agent, what it last showed, and
   [[ $agents != '[]' ]] || agents='[{"text":"No agents running","value":""}]'
   sel=$(jq -r --arg s "${herd_form_agent:-}" 'if any(.[]; .value == $s) then $s else .[0].value end' <<<"$agents")
   hist=$(agent_history "$sel"); hist=${hist:-Nothing on screen yet.}
-  print -r -- "$sel" > $FORM_STATE.agent; print -r -- "$sel$hist" | md5 -q > $FORM_STATE.sum
+  print 1 > $FORM_STATE.follow; print -r -- "$sel" > $FORM_STATE.agent; print -r -- "$sel$hist" | md5 -q > $FORM_STATE.sum; print -r -- "$hist" > $FORM_STATE.text
   jq -n --arg msg "${1:-}" --arg sel "$sel" --arg hist "$hist" --argjson agents "$agents" '
     def lbl($t): {type: "label", text: $t, constraints: {position: "right"}};
     def send: {type: "json", variables: {a: "{value:agent.selected.value}", m: "{value:msg.text}"},
@@ -351,13 +379,15 @@ tell_form_json() { # the message form: a running agent, what it last showed, and
       lbl("Agent"),   {type: "picker", id: "agent", items: $agents, selected: $sel,
                         events: [{triggers: "changed", action: {type: "script", src: "scripts/history", args: ["{value:agent.selected.value}"]}}]},
       lbl("Recent"),  {type: "textarea", id: "history", text: $hist, editable: false, bordertype: "bezel",
-                        behaviour: {scroll: "auto"}, # follows new output at the bottom; stays put once you scroll up
+                        behaviour: {scroll: "end"}, # opens at the newest line, like a terminal
                         textinsets: {horizontal: 4, vertical: 4}, constraints: {size: {height: 240}}},
+      {}, {type: "checkbox", id: "follow", text: "Follow new output. Untick to scroll back while it works.", checked: true,
+           events: [{triggers: "changed", action: {type: "script", src: "scripts/follow", args: ["{value:follow.checked}"]}}]},
       {}, {type: "button", text: "Open in Herdr", events: [{triggers: "actioned", action: open}]},
       lbl("Message"), {type: "textarea", id: "msg", text: $msg, editable: true, bordertype: "bezel",
                         textinsets: {horizontal: 4, vertical: 4}, constraints: {size: {height: 100}}},
       {}, {type: "button", text: "Send", events: [{triggers: "actioned", action: send}]}
-    ]}}}, functions: {ids: {history: "scrollbottom"}}}'
+    ]}}}}'
 }
 
 # ---- agents, tell, tidy -------------------------------------------------------------
@@ -419,7 +449,7 @@ tell_filter() { # complete an agent by its tab name (or terminal id when names r
     elif [[ -z $target || ${(L)key} == ${(L)target}* || $id == $target* ]]; then
       emit6 "$wh" "$(status_word $st) · $ag · Tab, then type your message. ⌥↩ for a longer one" "" "$key " 0 "$wh $id $ag" "$id" "" "$(status_icon $ag $st)"
     fi
-  done | items
+  done | items | jq --arg t "$target" 'if .items == [] then .items = [{title: "No agent called \($t)", subtitle: "Type tell and a space to list your agents", valid: false, autocomplete: ""}] else . end'
 }
 
 tell_agent() { # tell_agent <id> <message>

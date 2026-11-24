@@ -3,11 +3,11 @@
 # Runs on macOS and Linux (the release job), so it uses python3 for the plist rather than plutil.
 set -e
 cd "$(dirname "$0")"
-jq empty herd.alfredui/ui.json
-chmod +x herd herd.alfredui/scripts/*
+jq empty herd.alfredui/ui.json herd-tell.alfredui/ui.json
+chmod +x herd herd.alfredui/scripts/* herd-tell.alfredui/scripts/*
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
-cp -R info.plist icon.png icons herd herd.alfredui "$stage/"
+cp -R info.plist icon.png icons herd herd.alfredui herd-tell.alfredui "$stage/"
 python3 - "$stage/info.plist" "${VERSION:-}" <<'PY'
 import plistlib, sys
 path, version = sys.argv[1], sys.argv[2]
@@ -20,5 +20,5 @@ with open(path, "wb") as f:
 PY
 out=$PWD/herd.alfredworkflow
 rm -f "$out"
-(cd "$stage" && zip -q -r -X "$out" info.plist icon.png icons herd herd.alfredui -x '*.DS_Store')
+(cd "$stage" && zip -q -r -X "$out" info.plist icon.png icons herd herd.alfredui herd-tell.alfredui -x '*.DS_Store')
 echo "Built herd.alfredworkflow${VERSION:+ $VERSION}"
