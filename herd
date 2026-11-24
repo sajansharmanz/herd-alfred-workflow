@@ -17,7 +17,7 @@ typeset -U path
 CFG=${HERD_CONFIG:-$HOME/.config/herd/config.json}
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
-KNOWN=(claude codex opencode gemini pi amp cursor-agent aider goose crush droid qwen copilot kiro-cli auggie)
+KNOWN=(claude codex opencode gemini pi amp cursor-agent aider goose crush droid qwen copilot kiro-cli auggie hermes)
 # How each agent invokes a skill. Agents not listed get GENERIC_SKILL.
 typeset -A SKILL_TPL=(claude '/{skill} {args}' codex '${skill} {args}' pi '/skill:{skill} {args}')
 GENERIC_SKILL='Use the {skill} skill. {args}'

@@ -156,7 +156,7 @@ Once you know the form, you can skip it by typing its options into the line. Add
 | `herd default ` | Choose the default agent, if the form's Default agent is blank |
 | `herd root add ~/repos` | Add a repo folder, if the form's Repo folders is blank |
 | `herd root ` | List repo folders and remove one |
-| `herd setup` | Pick up agents installed since you last ran it |
+| `herd setup` | Pick up agents installed since you last ran it. Run it after you install a new agent. |
 
 ## Keeping track of your agents
 
@@ -256,12 +256,13 @@ The form covers the everyday settings. For more, edit `~/.config/herd/config.jso
 
 [`config.example.json`](config.example.json) shows every option. The two most useful are agent variants and shortcuts.
 
-### Agent variants
+### Agents and agent variants
 
-Add the same agent with different flags, then pick it with `@`:
+`herd setup` finds these agents for you: claude, codex, opencode, gemini, pi, amp, cursor-agent, aider, goose, crush, droid, qwen, copilot, kiro-cli, auggie and hermes. To use an agent that isn't on the list, add it here with the command that starts it. You can also add the same agent with different flags. Then pick it with `@`:
 
 ```json
 "agents": {
+  "myagent": { "cmd": ["myagent"] },
   "claude-opus": { "cmd": ["claude", "--model", "opus"], "skill": "/{skill} {args}" }
 }
 ```
