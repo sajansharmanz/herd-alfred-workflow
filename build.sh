@@ -5,6 +5,6 @@ cd "$(dirname "$0")"
 plutil -lint info.plist >/dev/null
 jq empty herd.alfredui/ui.json
 chmod +x herd herd.alfredui/scripts/*
-zip -q -r -o -X herd.alfredworkflow.tmp info.plist icon.png herd herd.alfredui
+zip -q -r -o -X herd.alfredworkflow.tmp info.plist icon.png icons herd herd.alfredui
 mv herd.alfredworkflow.tmp herd.alfredworkflow
 echo "Built herd.alfredworkflow"

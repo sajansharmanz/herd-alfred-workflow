@@ -2,7 +2,7 @@
 
 **Start a coding agent on a task from Alfred. It opens in its own Herdr tab, and can work on its own git worktree.**
 
-Type `herd fix the flaky login test` in Alfred and press Enter. A new tab opens in [Herdr](https://herdr.dev), your coding agent starts, and the task is already typed in. You carry on with what you were doing.
+Type `herd fix the flaky login test` in Alfred and press Enter. A new tab opens in [Herdr](https://herdr.dev), your coding agent starts, and the task is already typed in. You carry on with what you were doing, or jump straight to the new tab if you'd rather.
 
 ```
 herd fix the flaky login test
@@ -56,6 +56,7 @@ Starting an agent on a side task usually means opening a terminal, finding the r
 | **Repo folders** | One per line: a folder that holds your repos, such as `~/repos`, or a single repo. `#name` picks a repo from these. |
 | **Default repo** | The repo to use unless you type `#repo`. A name from your repo folders, or a full path. |
 | **Herdr Space** | Where tabs open unless you type `%space`. `{repo}` uses the repo's name, `{here}` uses the Space on screen, or give a fixed name. |
+| **Show new tabs** | Tick to bring Herdr forward on the new tab when a task starts. Leave it unticked to stay where you are. Type `+s` or `+ns` to change it for one task. |
 | **Herdr** | Which Herdr to use. Leave it on Auto to use whichever is running. |
 
 You can change these at any time in Alfred Preferences → Workflows → herd → **Configure Workflow**.
@@ -91,6 +92,7 @@ Open it any of these ways:
 | **Tab name** | A name for the agent's tab, so you can message it later with `tell`. |
 | **Worktree** | Tick to work on a new worktree and branch. |
 | **Pull request** | A PR number or link to check out on its own worktree. With no task, the agent is handed the PR's link. |
+| **Show** | Tick to bring Herdr forward on the new tab. It starts ticked or not to match your **Show new tabs** setting. |
 
 Press **Start**. In the Task box, Return starts a new line. You don't need to remember any symbols. The form is built with Alfred 6's [Alfred UI](https://www.alfredapp.com/help/alfredui/).
 
@@ -132,6 +134,8 @@ Once you know the form, you can skip it by typing its options into the line. Add
 | `=name` | Name the tab, so you can find it and message it later with `tell name`. Letters, digits, dots, dashes and underscores. With `+wt`, the branch is named after it too. | `=login` |
 | `+wt` | Work on a new worktree and branch | |
 | `+pr` | Check out the pull request named in the task, on its own worktree. A PR link does this without `+pr`. | `+pr 5281` |
+| `+s` | Bring Herdr forward on the new tab, for this task only | |
+| `+ns` | Don't bring Herdr forward, for this task only | |
 | `+clip` | Add what's on the clipboard to the task | `herd /fix-issue +clip` |
 | `@@` `##` | Keep an `@` or `#` word in the task even when it matches an agent or repo | `ask @@codex what it thinks` |
 
@@ -150,7 +154,7 @@ Three more keywords come with the workflow.
 
 ### `agents`: what needs you
 
-Lists every running agent, with the ones waiting on you first: **Needs you**, then **Finished**, **Idle** and **Working**. Type to filter by Space, tab or repo. Enter brings Herdr forward on that agent's tab. ⌥↩ writes it a message.
+Lists every running agent, with the ones waiting on you first: **Needs you** (red), then **Finished** (green), **Idle** (grey) and **Working** (orange). Each agent shows with its logo and a dot in that colour. An agent without a logo shows the herd sheep instead. Type to filter by Space, tab or repo. Enter brings Herdr forward on that agent's tab. ⌥↩ writes it a message.
 
 ### `tell`: message an agent
 
@@ -274,6 +278,7 @@ herd review 5281
 | `repoRoots` | Folders that hold your repos | None |
 | `defaultRepo` | Repo used without `#repo` | None (your home folder) |
 | `space` | Space used without `%space` | `{repo}` |
+| `show` | Bring Herdr forward on each new tab | `false` |
 | `backend` | `auto`, `app`, `core` or `tui` | `auto` |
 | `worktreeRoot` | Where worktrees go | `~/.herdr/worktrees` |
 | `copyFiles` | Files copied into new worktrees | `[".env"]` |
@@ -306,7 +311,7 @@ herd review 5281
 
 ## Working on herd
 
-The workflow is `herd` (a zsh script), `info.plist` (the Alfred workflow) and `herd.alfredui` (the options form). `herd.alfredui/scripts/fill` fills the form's lists when it opens. `herd.alfredui/scripts/space` shows the New Space box when you pick **New Space…**. `herd.alfredui/scripts/history` refreshes the message form's Recent box when you pick another agent. The Start button hands the choices back as `herd_f_*` variables. Run `./build.sh` to pack it all into `herd.alfredworkflow`.
+The workflow is `herd` (a zsh script), `info.plist` (the Alfred workflow) and `herd.alfredui` (the options form). `herd.alfredui/scripts/fill` fills the form's lists when it opens. `herd.alfredui/scripts/space` shows the New Space box when you pick **New Space…**. `herd.alfredui/scripts/history` refreshes the message form's Recent box when you pick another agent. The Start button hands the choices back as `herd_f_*` variables. Run `./build.sh` to pack it all into `herd.alfredworkflow`. To redraw the status icons, run `uv run --with pillow python make-icons.py`. It needs `rsvg-convert` (`brew install librsvg`).
 
 `herd` refuses to run outside Alfred. To test it from a terminal, set `HERD_DEV=1`, and add `-n` to print the Herdr commands instead of running them:
 
@@ -319,3 +324,5 @@ HERD_DEV=1 ./herd -n fix the build +wt @codex
 MIT. See [LICENSE](LICENSE).
 
 The icon is <a href="https://www.vecteezy.com/free-vector/sheep-icon">Sheep Icon Vectors by Vecteezy</a>, used under the Vecteezy Free License. It isn't covered by the MIT licence.
+
+The agent logos come from [LobeHub Icons](https://github.com/lobehub/lobe-icons), under the MIT licence. Each logo is a trademark of its owner.

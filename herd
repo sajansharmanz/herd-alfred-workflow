@@ -5,7 +5,7 @@
 #   <task words...>     a free-text task
 #   /<skill> [args...]  a skill or slash command from the repo or your global folders
 #   <shortcut> [args]   a shortcut from the config
-#   @agent  #repo  %space (%here)  =name  +wt  +pr  +clip   anywhere in the line
+#   @agent  #repo  %space (%here)  =name  +wt  +pr  +s  +ns  +clip   anywhere in the line
 #   setup | default <agent> | root [add|remove <folder>]
 # Settings: Alfred's Configure Workflow form, then ~/.config/herd/config.json.
 # HERD_DEV=1 lets it run outside Alfred for testing, with -n to print the Herdr commands instead of running them.
@@ -58,7 +58,7 @@ setup() {
 }
 
 # Alfred keeps Configure Workflow values in prefs.plist, and doesn't pass them to every object (the form's scripts miss them).
-for v in herd_agent herd_repo_roots herd_default_repo herd_space herd_backend; do
+for v in herd_agent herd_repo_roots herd_default_repo herd_space herd_backend herd_show; do
   [[ -z ${(P)v:-} && -f ${SELF:h}/prefs.plist ]] && typeset -g $v="$(plutil -extract $v raw "${SELF:h}/prefs.plist" 2>/dev/null || true)"
 done
 
@@ -69,9 +69,10 @@ done
 fw=(${(Q)${(z)${herd_agent:-}}}); fkey=${${fw[1]:-}:t}; ftpl=""; [[ -n $fkey ]] && ftpl=${SKILL_TPL[$fkey]:-}
 fcmd=$(for w in $fw; do home "$w"; done | jq -Rsc 'split("\n") | map(select(. != ""))')
 CONF=$(jq --arg agent "$fkey" --argjson cmd "$fcmd" --arg tpl "$ftpl" --arg roots "${herd_repo_roots:-}" --arg repo "${herd_default_repo:-}" \
-  --arg space "${herd_space:-}" --arg backend "${herd_backend:-}" '
+  --arg space "${herd_space:-}" --arg backend "${herd_backend:-}" --arg show "${herd_show:-}" '
   def set($k; $v): if $v != "" then .[$k] = $v else . end;
   set("defaultAgent"; $agent) | set("defaultRepo"; $repo) | set("space"; $space) | set("backend"; $backend)
+  | if $show != "" then .show = ($show == "1" or $show == "true") else . end
   | if $agent == "" then .
     elif ($cmd | length) > 1 or .agents[$agent] == null then .agents[$agent] = ((.agents[$agent] // {}) + {cmd: $cmd} + (if $tpl != "" then {skill: $tpl} else {} end))
     else . end
@@ -211,9 +212,9 @@ alfred() {
       skills "$repo" | while IFS=$'\t' read -r n d; do [[ $n == *${last#/}* ]] && emit "/$n" "$d · ${repo:t}" "$pre/$n" "$pre/$n " 1; done
     else
       if [[ -n $q ]]; then
-        emit "$q" "$agent in ${repo:t}   ·   /skill  @agent  #repo  %space  =name  +wt  +pr" "$q" "$q" 1
+        emit "$q" "$agent in ${repo:t}   ·   /skill  @agent  #repo  %space  =name  +wt  +pr  +s  +ns  +clip" "$q" "$q" 1
       else
-        emit "Type a task, or pick below" "$agent in ${repo:t}   ·   /skill  @agent  #repo  %space  =name  +wt  +pr" "" "" 0
+        emit "Type a task, or pick below" "$agent in ${repo:t}   ·   /skill  @agent  #repo  %space  =name  +wt  +pr  +s  +ns  +clip" "" "" 0
         emit "/ skills" "Skills and commands from ${repo:t} and your global folders" "" "/" 0
       fi
       if (( $#words <= 1 )); then
@@ -276,14 +277,14 @@ form_json() { # the form's fields, filled with this machine's agents, repos and 
       detect_backend 2>/dev/null && spaces_list 2>/dev/null | while IFS=$'\t' read -r n a; do print -r -- "$n"$'\t'"$(slug "$n")"; done
       print -r -- "New Space…"$'\t'"__new__"
     } | picker_items)
-  jq -n --arg task "$task" --argjson agents "$agents" --argjson repos "$repos" --argjson spaces "$spaces" '
+  jq -n --arg task "$task" --argjson agents "$agents" --argjson repos "$repos" --argjson spaces "$spaces" --argjson show "$(c '.show // false')" '
     def lbl($t): {type: "label", text: $t, constraints: {position: "right"}};
     # Getter values must go through the action variables before finish can use them.
     def start: {type: "json",
       variables: {t: "{value:task.text}", a: "{value:agent.selected.value}", r: "{value:repo.selected.value}",
-                  s: "{value:space.selected.value}", ns: "{value:newspace.text}", n: "{value:name.text}", w: "{value:wt.checked}", p: "{value:pr.text}"},
+                  s: "{value:space.selected.value}", ns: "{value:newspace.text}", n: "{value:name.text}", w: "{value:wt.checked}", p: "{value:pr.text}", sh: "{value:show.checked}"},
       src: {finish: {args: "{var:t}", variables: {herd_f_agent: "{var:a}", herd_f_repo: "{var:r}", herd_f_space: "{var:s}", herd_f_newspace: "{var:ns}",
-                                                  herd_f_name: "{var:n}", herd_f_wt: "{var:w}", herd_f_pr: "{var:p}"}}}};
+                                                  herd_f_name: "{var:n}", herd_f_wt: "{var:w}", herd_f_pr: "{var:p}", herd_f_show: "{var:sh}"}}}};
     {update: {relayout: true, ids: {herd_form: {components: [
       lbl("Task"),    {type: "textarea", id: "task", text: $task, editable: true, bordertype: "bezel",
                         textinsets: {horizontal: 4, vertical: 4}, constraints: {size: {height: 110}}},
@@ -297,6 +298,7 @@ form_json() { # the form's fields, filled with this machine's agents, repos and 
       lbl("Tab name"), {type: "textfield", id: "name", placeholder: "Optional. Name the tab, so you can message it with tell"},
       lbl("Worktree"),{type: "checkbox", id: "wt", text: "Work on a new worktree and branch", checked: false},
       lbl("Pull request"), {type: "textfield", id: "pr", placeholder: "Optional. A PR number or link to check out"},
+      lbl("Show"),    {type: "checkbox", id: "show", text: "Bring Herdr forward on the new tab", checked: $show},
       {}, {type: "button", text: "Start", events: [{triggers: "actioned", action: start}]}
     ]}}}}'
 }
@@ -349,8 +351,14 @@ tell_form_json() { # the message form: a running agent, what it last showed, and
 # A 7th column is the agent that ⌥↩ opens the message form for; an 8th prefills the message.
 items() { jq -Rn '{items: [inputs | split("\t") | {title: .[0], subtitle: .[1], arg: .[2], autocomplete: .[3], valid: (.[4] == "1"), match: .[5]}
   + (if (.[6] // "") != "" then {mods: {alt: {valid: true, arg: (.[7] // ""), subtitle: "Write a message to this agent in a form",
-      variables: {herd_form_mode: "tell", herd_form_agent: .[6]}}}} else {} end)]}'; }
-emit6() { print -r -- "$1"$'\t'"$2"$'\t'"$3"$'\t'"$4"$'\t'"$5"$'\t'"${6:-$1 $2}"$'\t'"${7:-}"$'\t'"${8:-}"; }
+      variables: {herd_form_mode: "tell", herd_form_agent: .[6]}}}} else {} end)
+  + (if (.[8] // "") != "" then {icon: {path: .[8]}} else {} end)]}'; }
+emit6() { print -r -- "$1"$'\t'"$2"$'\t'"$3"$'\t'"$4"$'\t'"$5"$'\t'"${6:-$1 $2}"$'\t'"${7:-}"$'\t'"${8:-}"$'\t'"${9:-}"; }
+status_icon() { # status_icon <agent> <status>: the agent's logo with a status dot, or the sheep for an agent without one
+  local a k; [[ -n ${STATUSES[(r)$2]:-} ]] || return 0
+  for a in $1 ${1%-code} ${1%-cli} herd; do k=icons/${(L)a}-$2.png; [[ -f ${SELF:h}/$k ]] && { print -r -- $k; return 0; }; done
+}
+STATUSES=(blocked working done idle)
 
 running_agents() { # id<TAB>agent<TAB>status<TAB>where<TAB>cwd, the ones that need you first
   detect_backend || die "Herdr isn't running"
@@ -369,7 +377,7 @@ status_word() {
 agents_filter() {
   local id ag st wh cwd
   running_agents | while IFS=$'\t' read -r id ag st wh cwd; do
-    emit6 "$wh" "$(status_word $st) · $ag · ${cwd:t}" ":focus $id" "$wh" 1 "$wh $st $ag ${cwd:t}" "$id"
+    emit6 "$wh" "$(status_word $st) · $ag · ${cwd:t}" ":focus $id" "$wh" 1 "$wh $st $ag ${cwd:t}" "$id" "" "$(status_icon $ag $st)"
   done | items
 }
 
@@ -393,9 +401,9 @@ tell_filter() { # complete an agent by its tab name (or terminal id when names r
     IFS=$'\t' read -r id ag st wh cwd <<<"$r"
     t=$(tab_of "$wh"); key=$id; (( ${seen[${(L)t}]:-0} == 1 )) && key=$t
     if [[ -n $msg ]]; then
-      [[ $target == "$id" || ${(L)target} == ${(L)key} ]] && emit6 "Send to $wh" "$msg" ":tell $id $msg" "$q" 1 "" "$id" "$msg"
+      [[ $target == "$id" || ${(L)target} == ${(L)key} ]] && emit6 "Send to $wh" "$msg" ":tell $id $msg" "$q" 1 "" "$id" "$msg" "$(status_icon $ag $st)"
     elif [[ -z $target || ${(L)key} == ${(L)target}* || $id == $target* ]]; then
-      emit6 "$wh" "$(status_word $st) · $ag · Tab, then type your message. ⌥↩ for a longer one" "" "$key " 0 "$wh $id $ag" "$id"
+      emit6 "$wh" "$(status_word $st) · $ag · Tab, then type your message. ⌥↩ for a longer one" "" "$key " 0 "$wh $id $ag" "$id" "" "$(status_icon $ag $st)"
     fi
   done | items
 }
@@ -536,7 +544,8 @@ case ${1:-} in
     elif [[ -n ${herd_f_space:-} ]]; then set -- "$@" "%$herd_f_space"; fi
     [[ -n ${herd_f_name:-} ]] && set -- "$@" "=$herd_f_name"
     if [[ -n ${herd_f_pr:-} ]]; then export HERD_PR=$(pr_number "$herd_f_pr"); set -- "$@" +pr
-    elif [[ ${herd_f_wt:-} == (1|true) ]]; then set -- "$@" +wt; fi ;;
+    elif [[ ${herd_f_wt:-} == (1|true) ]]; then set -- "$@" +wt; fi
+    [[ ${herd_f_show:-} == (1|true) ]] && set -- "$@" +s || set -- "$@" +ns ;;
   ""|-h|--help|help) sed -n '2,/^set /p' "$SELF" | grep '^#' | sed 's/^# \{0,1\}//'; exit ;;
 esac
 
@@ -548,7 +557,7 @@ esac
 
 dry=0; [[ ${1:-} == -n ]] && { dry=1; shift; }
 [[ -n ${HERD_DRY:-} ]] && dry=1
-agent=""; repoarg=""; spacearg=""; namearg=""; wt=""; words=()
+agent=""; repoarg=""; spacearg=""; namearg=""; wt=""; show=""; words=()
 # @x and #x are herd's options only when x is one of your agents or repos. Anything else, like a Claude
 # subagent (@code-reviewer) or an issue (#12), stays in the task. @@x and ##x always pass through as @x and #x.
 known_agents=(${(f)"$(c '.agents | keys[]')"})
@@ -559,6 +568,8 @@ for a in "$@"; do
     \#?*) if ( resolve_repo "${a#\#}" ) >/dev/null 2>&1; then repoarg=${a#\#}; else words+=("$a"); fi ;;
     +wt) wt=new ;;
     +pr) wt=pr ;;
+    +s) show=1 ;;
+    +ns) show=0 ;;
     %*) spacearg=${a#%} ;;
     \=?*) namearg=${a#=}; [[ $namearg == [A-Za-z0-9._-]## ]] || die "a tab name can use letters, digits, dots, dashes and underscores" ;;
     +clip) words+=("$(pbpaste)") ;;
@@ -666,6 +677,8 @@ run() { if (( dry )); then print -ru2 -- "${(q-)@}"; else "$@"; fi; }
 later() { if (( dry )); then print -ru2 -- "(background) $*"; else { eval "$*"; } >/dev/null 2>&1 &! fi; }
 
 detect_backend || die "Herdr isn't running. Open Herdr desktop, or start the herdr TUI."
+show=${show:-$(c 'if .show then 1 else 0 end')}
+focus=false; nofocus=(--no-focus); (( show )) && { focus=true; nofocus=(); }
 if [[ -n $namearg ]] && running_agents | cut -f4 | while read -r w; do tab_of "$w"; done | grep -qixF -- "$namearg"; then
   die "an agent called $namearg is already running. Pick another name."
 fi
@@ -681,10 +694,11 @@ case $backend in
     argv=$(jq -c --arg path "$envpath" '["/usr/bin/env", "PATH=\($path)"] + .' <<<"$cmdjson")
     task=(--task "$prompt"); (( inline )) && task=()
     if [[ -n $space ]]; then
-      run herdr-app do tab.new --space "$space" --name "$tabname" --folder "$dir" --argv "$argv" "${task[@]}" >/dev/null
+      run herdr-app do tab.new --space "$space" --name "$tabname" --folder "$dir" --argv "$argv" "${task[@]}" --focus $focus >/dev/null
     else
-      run herdr-app do space.new --name "$spacename" --tab "$tabname" --folder "$dir" --argv "$argv" "${task[@]}" >/dev/null
+      run herdr-app do space.new --name "$spacename" --tab "$tabname" --folder "$dir" --argv "$argv" "${task[@]}" --focus $focus >/dev/null
     fi
+    (( show )) && run open -a Herdr
     where="$tabname in $spacename" ;;
   core) # herdr-core with the window closed. Terminals show in their Space when the window opens.
     space=$(jq -r --arg n "$spacename" '.[$n] // empty' "$SPACES" 2>/dev/null || true)
@@ -692,14 +706,18 @@ case $backend in
     run hc run --bg --no-parent --outlive-parent --no-notify --name "$hname" --cwd "$dir" "${label[@]}" \
       -- /usr/bin/env "PATH=$envpath" "${(@f)$(jq -r '.[]' <<<"$cmdjson")}" >/dev/null
     (( inline )) || later "hc wait ${(q)hname} --timeout 300 && env -u HC_TERMINAL_ID hc send ${(q)hname} ${(q)prompt}"
+    if (( show )); then # opening the window shows the new terminal; focus it once Herdr is up
+      run open -a Herdr
+      later "for i in 1 2 3 4 5 6 7 8 9 10; do herdr-app do agent.focus --terminal ${(q)hname} && break; sleep 1; done"
+    fi
     where="$hname"; [[ -n $space ]] && where+=" in $spacename" || where+=" (not in a Space yet: open Herdr desktop once, or use hc attach $hname)" ;;
   tui) # the herdr terminal server
     ws=$(herdr workspace list | jq -r --arg n "$spacename" '[.result.workspaces[] | select(.label == $n)][0].workspace_id // empty')
-    if (( dry )); then pane='<new-pane>'; run herdr tab create --workspace "${ws:-<new>}" --cwd "$dir" --label "$tabname" --no-focus
+    if (( dry )); then pane='<new-pane>'; run herdr tab create --workspace "${ws:-<new>}" --cwd "$dir" --label "$tabname" "${nofocus[@]}"
     elif [[ -n $ws ]]; then
-      pane=$(herdr tab create --workspace "$ws" --cwd "$dir" --label "$tabname" --no-focus | jq -r '.result.root_pane.pane_id')
+      pane=$(herdr tab create --workspace "$ws" --cwd "$dir" --label "$tabname" "${nofocus[@]}" | jq -r '.result.root_pane.pane_id')
     else
-      pane=$(herdr workspace create --cwd "$dir" --label "$spacename" --no-focus | jq -r '.result.root_pane.pane_id')
+      pane=$(herdr workspace create --cwd "$dir" --label "$spacename" "${nofocus[@]}" | jq -r '.result.root_pane.pane_id')
     fi
     bin=${bin:t}; rest=(${(f)"$(jq -r '.[1:][]' <<<"$cmdjson")"})
     kinds=(${(s:, :)"$(herdr agent start --help 2>/dev/null | sed -n 's/.*possible values: \(.*\)\]/\1/p')"})

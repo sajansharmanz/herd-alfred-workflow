@@ -188,7 +188,7 @@
 				<key>scriptfile</key>
 				<string></string>
 				<key>subtext</key>
-				<string>A task, /skill or shortcut, plus @agent #repo %space +wt +pr</string>
+				<string>A task, /skill or shortcut, plus @agent #repo %space =name +wt +pr +s +ns</string>
 				<key>title</key>
 				<string>Start an agent task</string>
 				<key>type</key>
@@ -428,11 +428,11 @@
 				<key>focusedappvariablename</key>
 				<string></string>
 				<key>hotkey</key>
-				<integer>0</integer>
+				<integer>4</integer>
 				<key>hotmod</key>
-				<integer>0</integer>
+				<integer>524288</integer>
 				<key>hotstring</key>
-				<string></string>
+				<string>H</string>
 				<key>leftcursor</key>
 				<false/>
 				<key>modsmode</key>
@@ -472,7 +472,7 @@
 	<key>readme</key>
 	<string>Start any coding agent on a task in Herdr, on its own worktree if you like.
 
-- **herd** followed by a task, a /skill or a PR link. ⌥↩ opens a form with every option.
+- **herd** followed by a task, a /skill or a PR link. Add +s to bring Herdr forward on the new tab, or +ns not to. ⌥↩ opens a form with every option.
 - **Your hotkey** opens the same form, with any selected text as the task. Set it on the Hotkey object.
 - **agents** lists running agents, the ones that need you first.
 - **tell** messages an agent. ⌥↩ opens a message form.
@@ -486,58 +486,58 @@ Icon: [Sheep Icon Vectors by Vecteezy](https://www.vecteezy.com/free-vector/shee
 		<key>F1A00000-0000-4000-8000-000000000001</key>
 		<dict>
 			<key>xpos</key>
-			<real>40.0</real>
+			<real>40</real>
 			<key>ypos</key>
-			<real>40.0</real>
+			<real>40</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000002</key>
 		<dict>
 			<key>xpos</key>
-			<real>260.0</real>
+			<real>260</real>
 			<key>ypos</key>
-			<real>40.0</real>
+			<real>40</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000003</key>
 		<dict>
 			<key>xpos</key>
-			<real>480.0</real>
+			<real>480</real>
 			<key>ypos</key>
-			<real>40.0</real>
+			<real>40</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000011</key>
 		<dict>
 			<key>xpos</key>
-			<real>40.0</real>
+			<real>40</real>
 			<key>ypos</key>
-			<real>170.0</real>
+			<real>170</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000012</key>
 		<dict>
 			<key>xpos</key>
-			<real>40.0</real>
+			<real>40</real>
 			<key>ypos</key>
-			<real>300.0</real>
+			<real>300</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000014</key>
 		<dict>
 			<key>xpos</key>
-			<real>40.0</real>
+			<real>40</real>
 			<key>ypos</key>
-			<real>560.0</real>
+			<real>560</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000021</key>
 		<dict>
 			<key>xpos</key>
-			<real>260.0</real>
+			<real>260</real>
 			<key>ypos</key>
-			<real>-90.0</real>
+			<real>-90</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000022</key>
 		<dict>
 			<key>xpos</key>
-			<real>480.0</real>
+			<real>480</real>
 			<key>ypos</key>
-			<real>-90.0</real>
+			<real>-90</real>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000031</key>
 		<dict>
@@ -645,6 +645,25 @@ Icon: [Sheep Icon Vectors by Vecteezy](https://www.vecteezy.com/free-vector/shee
 			<string>textfield</string>
 			<key>variable</key>
 			<string>herd_space</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<false/>
+				<key>required</key>
+				<false/>
+				<key>text</key>
+				<string>Bring Herdr forward on the new tab</string>
+			</dict>
+			<key>description</key>
+			<string>Bring Herdr forward on the new tab when a task starts. Type +s or +ns to change it for one task.</string>
+			<key>label</key>
+			<string>Show new tabs</string>
+			<key>type</key>
+			<string>checkbox</string>
+			<key>variable</key>
+			<string>herd_show</string>
 		</dict>
 		<dict>
 			<key>config</key>
