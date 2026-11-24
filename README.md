@@ -29,7 +29,7 @@ Starting an agent on a side task usually means opening a terminal, finding the r
 - **[Herdr](https://herdr.dev)**: the desktop app, its background core, or the terminal UI
 - **jq**: included in macOS 15 and later. On older versions, `brew install jq`.
 - **git**
-- **[GitHub CLI](https://cli.github.com) (`gh`)**, signed in, for `tidy`, which only works with GitHub. Checking out pull requests also works with GitLab and others (see below).
+- **For `tidy` only:** the command-line tool for the site your repos are on, signed in. See [the `tidy` section](#tidy-clear-finished-worktrees).
 - **At least one coding agent** that runs in a terminal
 
 ## Words used here
@@ -163,13 +163,24 @@ tell login also check the session timeout
 
 The agent gets it as if you'd typed it in its tab.
 
-For a longer message, press **⌥↩** on an agent, in `tell` or in `agents`. A form opens with the running agents and a message box, so you can write several lines or paste a log before pressing **Send**.
+For a longer message, press **⌥↩** on an agent, in `tell` or in `agents`. A form opens with the running agents and a message box. Above the message, **Recent** shows the last lines on that agent's screen, so you can see what you're replying to. Pick another agent and it changes to match. If you need more than the last 50 lines, press **Open in Herdr** to go to the agent's tab. Write several lines or paste a log, then press **Send**.
 
 ### `tidy`: clear finished worktrees
 
-Lists the worktrees in `~/.herdr/worktrees` with the state of their pull request. Enter on one whose PR is merged or closed:
+Lists the worktrees in `~/.herdr/worktrees` with the state of their pull request. To find that state, it uses the site's own command-line tool. Install the one for your site and sign in once:
 
-- closes any Herdr tabs open in it,
+| Site | Tool | Install | Sign in |
+|---|---|---|---|
+| GitHub, including GitHub Enterprise | [`gh`](https://cli.github.com) | `brew install gh` | `gh auth login` |
+| GitLab, including self-hosted | [`glab`](https://gitlab.com/gitlab-org/cli) | `brew install glab` | `glab auth login` |
+| Gitea, Forgejo and Codeberg | [`gt`](https://about.gitea.com/products/gitea-cli/) | `brew install gitea-cli` | `gt auth login --host <your site>` |
+| Bitbucket | None | | |
+
+Bitbucket has no tool that can check a pull request, so `tidy` keeps those worktrees. Remove one yourself with `git worktree remove <folder>`.
+
+Enter on a worktree whose PR is merged or closed:
+
+- closes any Herdr tabs open in it (desktop app and core only; in the Terminal UI, close them yourself),
 - removes the worktree,
 - deletes its branch, if the PR was **merged**. A closed PR's branch is kept, because it may hold commits that were never pushed.
 
@@ -287,14 +298,15 @@ herd review 5281
 | The agent asks whether to trust the folder | Answer it once per folder. The task arrives after that. |
 | A skill isn't in the `/` list | A new global skill shows within the hour, or straight away after `herd setup`. A skill outside a hidden folder needs its folder in `skillDirs` in the settings file. |
 | A pull request won't check out | The task needs a PR number or link, and the PR must be in the repo's `origin`. Bitbucket pull requests can't be fetched this way. |
-| `tidy` shows nothing, or an error | It needs a GitHub repo and the GitHub CLI, signed in with `gh auth login`. |
+| `tidy` says to install a tool and sign in | Install the tool it names, then sign in. The table in the `tidy` section shows how. |
+| `tidy` says "no PR" for a worktree that has one | Check you're signed in to the site's tool. For GitHub, run `gh auth status`. |
 | A task opened with the window closed isn't in any Space | `herd` hadn't seen that Space yet. Open Herdr once, then run it again. |
 
 `herd` only deletes worktrees when you ask it to with `tidy`, and only once their pull request is merged or closed.
 
 ## Working on herd
 
-The workflow is `herd` (a zsh script), `info.plist` (the Alfred workflow) and `herd.alfredui` (the options form). `herd.alfredui/scripts/fill` fills the form's lists when it opens. `herd.alfredui/scripts/space` shows the New Space box when you pick **New Space…**. The Start button hands the choices back as `herd_f_*` variables. Run `./build.sh` to pack it all into `herd.alfredworkflow`.
+The workflow is `herd` (a zsh script), `info.plist` (the Alfred workflow) and `herd.alfredui` (the options form). `herd.alfredui/scripts/fill` fills the form's lists when it opens. `herd.alfredui/scripts/space` shows the New Space box when you pick **New Space…**. `herd.alfredui/scripts/history` refreshes the message form's Recent box when you pick another agent. The Start button hands the choices back as `herd_f_*` variables. Run `./build.sh` to pack it all into `herd.alfredworkflow`.
 
 `herd` refuses to run outside Alfred. To test it from a terminal, set `HERD_DEV=1`, and add `-n` to print the Herdr commands instead of running them:
 

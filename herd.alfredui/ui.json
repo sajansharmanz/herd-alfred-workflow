@@ -41,7 +41,7 @@
     "padding": 16,
     "size": {
       "width": 560,
-      "height": 480
+      "height": 560
     },
     "root": {
       "type": "view",

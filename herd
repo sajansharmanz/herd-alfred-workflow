@@ -301,19 +301,45 @@ form_json() { # the form's fields, filled with this machine's agents, repos and 
     ]}}}}'
 }
 
-tell_form_json() { # the message form: a running agent and a message box
-  local agents
+agent_history() { # agent_history <id>: the last lines on the agent's screen, without its input box and status bar
+  detect_backend || return 0
+  if [[ $backend == tui ]]; then
+    local pane; pane=$(herdr agent list | jq -r --arg n "$1" '.result.agents[] | select(.name == $n) | (.pane_id // .pane // empty)' | head -1)
+    [[ -n $pane ]] && herdr pane read "$pane" --source recent --lines 150
+  else hc read "$1" --lines 150; fi 2>/dev/null |
+    sed 's/[[:space:]]*$//' |
+    awk '{ l[NR] = $0 } END {
+      # Agents draw their input box and status bar below a line of box characters; drop from the first such line near the end.
+      end = NR; for (i = NR; i > NR - 12 && i > 0; i--) if (l[i] ~ /^[─━═-]{20,}$/) end = i - 1
+      for (i = 1; i <= end; i++) { if (l[i] == "" && prev == "") continue; print l[i]; prev = l[i] }
+    }' | tail -50 | sed '1{/^$/d;}'
+}
+
+history_json() { # the update that shows an agent's recent screen in the message form
+  local h; h=$(agent_history "$1")
+  jq -n --arg h "${h:-Nothing on screen yet.}" '{update: {ids: {history: {text: $h}}}}'
+}
+
+tell_form_json() { # the message form: a running agent, what it last showed, and a message box
+  local agents sel hist
   agents=$(running_agents | while IFS=$'\t' read -r id ag st wh cwd; do print -r -- "$wh · $(status_word $st)"$'\t'"$id"; done | picker_items)
   [[ $agents != '[]' ]] || agents='[{"text":"No agents running","value":""}]'
-  jq -n --arg msg "${1:-}" --arg sel "${herd_form_agent:-}" --argjson agents "$agents" '
+  sel=$(jq -r --arg s "${herd_form_agent:-}" 'if any(.[]; .value == $s) then $s else .[0].value end' <<<"$agents")
+  hist=$(agent_history "$sel"); hist=${hist:-Nothing on screen yet.}
+  jq -n --arg msg "${1:-}" --arg sel "$sel" --arg hist "$hist" --argjson agents "$agents" '
     def lbl($t): {type: "label", text: $t, constraints: {position: "right"}};
     def send: {type: "json", variables: {a: "{value:agent.selected.value}", m: "{value:msg.text}"},
       src: {finish: {args: "{var:m}", variables: {herd_f_tell: "{var:a}"}}}};
+    def open: {type: "json", variables: {a: "{value:agent.selected.value}"},
+      src: {finish: {args: "", variables: {herd_f_focus: "{var:a}"}}}};
     {update: {relayout: true, ids: {herd_form: {components: [
-      lbl("Agent"),   {type: "picker", id: "agent", items: $agents,
-                        selected: (if any($agents[]; .value == $sel) then $sel else $agents[0].value end)},
+      lbl("Agent"),   {type: "picker", id: "agent", items: $agents, selected: $sel,
+                        events: [{triggers: "changed", action: {type: "script", src: "scripts/history", args: ["{value:agent.selected.value}"]}}]},
+      lbl("Recent"),  {type: "textarea", id: "history", text: $hist, editable: false, bordertype: "bezel",
+                        textinsets: {horizontal: 4, vertical: 4}, constraints: {size: {height: 240}}},
+      {}, {type: "button", text: "Open in Herdr", events: [{triggers: "actioned", action: open}]},
       lbl("Message"), {type: "textarea", id: "msg", text: $msg, editable: true, bordertype: "bezel",
-                        textinsets: {horizontal: 4, vertical: 4}, constraints: {size: {height: 160}}},
+                        textinsets: {horizontal: 4, vertical: 4}, constraints: {size: {height: 100}}},
       {}, {type: "button", text: "Send", events: [{triggers: "actioned", action: send}]}
     ]}}}}'
 }
@@ -388,7 +414,31 @@ wt_branch() { # the branch a worktree is on; a detached review worktree maps bac
   print -r -- "$br"
 }
 
-herd_worktrees() { # dir<TAB>repo<TAB>branch<TAB>PR state, asking GitHub about every worktree at once
+pr_state() { # pr_state <repo> <branch>: MERGED, CLOSED, OPEN or NO PR, from the site's own CLI. NEEDS <cli> or UNSUPPORTED otherwise.
+  local repo=$1 br=$2 n="" host j
+  [[ $br == review/pr-<-> ]] && n=${br#review/pr-}
+  host=$(git -C "$repo" remote get-url origin 2>/dev/null); host=${${${host#*://}#*@}%%[:/]*}
+  # A self-hosted site's name may not say what it runs, so ask the CLIs you're signed in with.
+  if [[ $host != *(github|gitlab|bitbucket)* ]]; then
+    if command -v gh >/dev/null && gh auth status --hostname "$host" &>/dev/null; then host=github:$host
+    elif command -v glab >/dev/null && glab auth status --hostname "$host" &>/dev/null; then host=gitlab:$host; fi
+  fi
+  case $host in
+    *github*) command -v gh >/dev/null || { print "NEEDS gh"; return; }
+      (cd "$repo" && gh pr view "${n:-$br}" --json state -q .state 2>/dev/null) || print "NO PR" ;;
+    *gitlab*) command -v glab >/dev/null || { print "NEEDS glab"; return; }
+      if [[ -n $n ]]; then j=$(cd "$repo" && glab mr view "$n" -F json 2>/dev/null) && j="[$j]" || { print "NEEDS glab"; return; }
+      else j=$(cd "$repo" && glab mr list --source-branch "$br" --all -F json 2>/dev/null) || { print "NEEDS glab"; return; }; fi
+      jq -r '.[0].state // "no pr" | if . == "opened" then "OPEN" else ascii_upcase end' <<<"${j:-[]}" 2>/dev/null || print "NO PR" ;;
+    *bitbucket*) print "UNSUPPORTED" ;;
+    *) command -v gt >/dev/null || { print "NEEDS gt"; return; } # Gitea, Forgejo and Codeberg
+      if [[ -n $n ]]; then j=$(gt pr view "$n" --cwd "$repo" --json state,merged 2>/dev/null) && j="[$j]" || { print "NEEDS gt"; return; }
+      else j=$(gt pr list --cwd "$repo" --head "$br" --state all -L 1 --json state,merged 2>/dev/null) || { print "NEEDS gt"; return; }; fi
+      jq -r '.[0] // empty | if .merged then "MERGED" else (.state | ascii_upcase) end' <<<"${j:-[]}" 2>/dev/null | grep . || print "NO PR" ;;
+  esac
+}
+
+herd_worktrees() { # dir<TAB>repo<TAB>branch<TAB>PR state, asking about every worktree at once
   local d repo br tmp k=0
   tmp=$(mktemp -d)
   for d in $(home "$(c .worktreeRoot)")/*/*(N/); do
@@ -396,7 +446,7 @@ herd_worktrees() { # dir<TAB>repo<TAB>branch<TAB>PR state, asking GitHub about e
     repo=$(git -C "$d" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || continue; repo=${repo:h}
     br=$(wt_branch "$d"); (( ++k ))
     print -r -- "$d"$'\t'"$repo"$'\t'"$br" > $tmp/$k
-    { cd "$repo" && gh pr view "${${br#review/pr-}:-HEAD}" --json state -q .state 2>/dev/null || print "NO PR"; } > $tmp/$k.state &
+    pr_state "$repo" "$br" > $tmp/$k.state &
   done
   wait
   for d in $tmp/<->(N); do print -r -- "$(<$d)"$'\t'"$(head -1 $d.state)"; done
@@ -409,6 +459,8 @@ tidy_filter() {
     case $st in
       MERGED) emit6 "${d:t}" "PR merged · ${repo:t} · Enter removes the worktree, its branch and its tabs" ":tidy $d" "" 1 ;;
       CLOSED) emit6 "${d:t}" "PR closed · ${repo:t} · Enter removes the worktree and its tabs, and keeps the branch" ":tidy $d" "" 1 ;;
+      NEEDS\ *) emit6 "${d:t}" "${repo:t} · install ${st#NEEDS } and sign in to check its PR, so it's kept for now" "" "" 0 ;;
+      UNSUPPORTED) emit6 "${d:t}" "${repo:t} · Bitbucket PRs can't be checked, so it's kept. Remove it with git worktree remove." "" "" 0 ;;
       *) emit6 "${d:t}" "${${(L)st}/no pr/no PR} · ${repo:t} · kept until its PR is merged or closed" "" "" 0 ;;
     esac
   done | items
@@ -425,7 +477,7 @@ tidy_one() { # tidy_one <worktree dir>
   done
   git -C "$repo" worktree remove "$d" || die "couldn't remove ${d:t}"
   # A closed PR's branch may hold commits that were never pushed, so only merged branches go.
-  if [[ $br != HEAD ]] && (cd "$repo" && gh pr list --state merged --head "$br" --json number -q '.[0].number' 2>/dev/null) | grep -q .; then
+  if [[ $br != HEAD && $(pr_state "$repo" "$br") == MERGED ]]; then
     git -C "$repo" branch -D "$br" >/dev/null 2>&1
   fi
   print -r -- "Removed ${d:t}"
@@ -456,9 +508,14 @@ case ${1:-} in
     jq --arg a "$2" '.defaultAgent = $a' "$CFG" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"; print "herd: default agent is $2"; exit ;;
   alfred) alfred "${2:-}"; exit ;;
   --line) shift; set -- ${(s: :)1}; [[ ${1:-} == (setup|default|root|roots) ]] && exec "$SELF" "$@" ;;
+  history-json) history_json "${2:-}"; exit ;;
   form-json) if [[ ${herd_form_mode:-} == tell ]]; then tell_form_json "${2:-}"; else form_json "${2:-}"; fi; exit ;;
   --form) # the options form's choices arrive as herd_f_* variables
     local_task=${2:-}
+    if [[ -n ${herd_f_focus:-} ]]; then
+      [[ -n ${HERD_DRY:-} ]] && { print -ru2 -- "focus $herd_f_focus"; exit; }
+      focus_agent "$herd_f_focus"; exit
+    fi
     if [[ -n ${herd_f_tell:-} ]]; then
       [[ -n ${HERD_DRY:-} ]] && { print -ru2 -- "tell $herd_f_tell: $local_task"; exit; }
       tell_agent "$herd_f_tell" "$local_task"; exit
