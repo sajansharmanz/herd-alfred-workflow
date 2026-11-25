@@ -374,6 +374,10 @@ Every push to `master` makes a release on GitHub, with the built workflow attach
 
 The first release uses the version in `info.plist`. After that, the tags (`v1.2.3`) hold the version, and the release job stamps it into the package. You don't need to edit `info.plist` to release.
 
+## AI disclosure
+
+`herd` was written with the help of Claude Code, an AI coding tool. I designed it, tested it and use it every day.
+
 ## Licence
 
 MIT. See [LICENSE](LICENSE).
