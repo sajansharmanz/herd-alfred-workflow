@@ -4,6 +4,8 @@
 <dict>
 	<key>bundleid</key>
 	<string>com.sajansharma.herd</string>
+	<key>category</key>
+	<string>Productivity</string>
 	<key>connections</key>
 	<dict>
 		<key>F1A00000-0000-4000-8000-000000000001</key>
@@ -185,13 +187,13 @@
 				<key>escaping</key>
 				<integer>0</integer>
 				<key>keyword</key>
-				<string>herd</string>
+				<string>{var:herd_keyword}</string>
 				<key>queuedelaycustom</key>
 				<integer>1</integer>
 				<key>queuedelaymode</key>
 				<integer>0</integer>
 				<key>queuemode</key>
-				<integer>1</integer>
+				<integer>2</integer>
 				<key>runningsubtext</key>
 				<string></string>
 				<key>script</key>
@@ -272,7 +274,7 @@
 				<key>escaping</key>
 				<integer>0</integer>
 				<key>keyword</key>
-				<string>agents</string>
+				<string>{var:agents_keyword}</string>
 				<key>queuedelaycustom</key>
 				<integer>1</integer>
 				<key>queuedelaymode</key>
@@ -315,13 +317,13 @@
 				<key>escaping</key>
 				<integer>0</integer>
 				<key>keyword</key>
-				<string>tell</string>
+				<string>{var:tell_keyword}</string>
 				<key>queuedelaycustom</key>
 				<integer>1</integer>
 				<key>queuedelaymode</key>
 				<integer>0</integer>
 				<key>queuemode</key>
-				<integer>1</integer>
+				<integer>2</integer>
 				<key>runningsubtext</key>
 				<string></string>
 				<key>script</key>
@@ -358,7 +360,7 @@
 				<key>escaping</key>
 				<integer>0</integer>
 				<key>keyword</key>
-				<string>tidy</string>
+				<string>{var:tidy_keyword}</string>
 				<key>queuedelaycustom</key>
 				<integer>1</integer>
 				<key>queuedelaymode</key>
@@ -500,76 +502,102 @@
 		</dict>
 	</array>
 	<key>readme</key>
-	<string>Start any coding agent on a task in Herdr, on its own worktree if you like.
+	<string>## Usage
 
-- **herd** followed by a task, a /skill or a PR link. Add +s to bring Herdr forward on the new tab, or +ns not to. ⌥↩ opens a form with every option.
-- **Your hotkey** opens the same form, with any selected text as the task. Set it on the Hotkey object.
-- **agents** lists running agents, the ones that need you first.
-- **tell** messages an agent. ⌥↩ opens a message form.
-- **tidy** removes worktrees whose PR is merged or closed.
+Start a coding agent on a task in its own Herdr tab via the `herd` keyword. Add `@agent`, `#repo`, `%space`, `=name` or `+wt` anywhere in the line, or paste a pull request link to review it on its own worktree.
 
-Set your default agent, repo folders and Space in Configure Workflow.
+![Starting a task](images/task.png)
 
-Icon: [Sheep Icon Vectors by Vecteezy](https://www.vecteezy.com/free-vector/sheep-icon)</string>
+* &lt;kbd&gt;↩&lt;/kbd&gt; Start the agent.
+* &lt;kbd&gt;⌥&lt;/kbd&gt;&lt;kbd&gt;↩&lt;/kbd&gt; Open a form with every option.
+
+Type `/` to pick one of your skills or slash commands.
+
+![Picking a skill](images/skills.png)
+
+Alternatively, select text anywhere and start a task with it via the Universal Action. Configure the Hotkey to open the form with the selected text as the task.
+
+![The form](images/form.png)
+
+See which agents need you via the `agents` keyword.
+
+![Running agents](images/agents.png)
+
+* &lt;kbd&gt;↩&lt;/kbd&gt; Show the agent's tab in Herdr.
+* &lt;kbd&gt;⌥&lt;/kbd&gt;&lt;kbd&gt;↩&lt;/kbd&gt; Write the agent a message.
+
+Message a running agent via the `tell` keyword.
+
+* &lt;kbd&gt;↩&lt;/kbd&gt; Send the message.
+* &lt;kbd&gt;⌥&lt;/kbd&gt;&lt;kbd&gt;↩&lt;/kbd&gt; Open a form showing the agent's recent output.
+
+Remove worktrees whose pull request is merged or closed via the `tidy` keyword.
+
+Change the keywords, default agent, repo folders and Space in the Workflow's Configuration. More settings and help: [github.com/sajansharmanz/herd-alfred-workflow](https://github.com/sajansharmanz/herd-alfred-workflow).
+
+herd was written with the help of Claude Code, an AI coding tool.
+
+Icon: [Sheep Icon Vectors by Vecteezy](https://www.vecteezy.com/free-vector/sheep-icon). Agent logos: [LobeHub Icons](https://github.com/lobehub/lobe-icons).
+</string>
 	<key>uidata</key>
 	<dict>
 		<key>F1A00000-0000-4000-8000-000000000001</key>
 		<dict>
 			<key>xpos</key>
-			<real>40.0</real>
+			<integer>40</integer>
 			<key>ypos</key>
-			<real>40.0</real>
+			<integer>40</integer>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000002</key>
 		<dict>
 			<key>xpos</key>
-			<real>260.0</real>
+			<integer>260</integer>
 			<key>ypos</key>
-			<real>40.0</real>
+			<integer>40</integer>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000003</key>
 		<dict>
 			<key>xpos</key>
-			<real>480.0</real>
+			<integer>480</integer>
 			<key>ypos</key>
-			<real>40.0</real>
+			<integer>40</integer>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000011</key>
 		<dict>
 			<key>xpos</key>
-			<real>40.0</real>
+			<integer>40</integer>
 			<key>ypos</key>
-			<real>170.0</real>
+			<integer>170</integer>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000012</key>
 		<dict>
 			<key>xpos</key>
-			<real>40.0</real>
+			<integer>40</integer>
 			<key>ypos</key>
-			<real>300.0</real>
+			<integer>300</integer>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000014</key>
 		<dict>
 			<key>xpos</key>
-			<real>40.0</real>
+			<integer>40</integer>
 			<key>ypos</key>
-			<real>560.0</real>
+			<integer>560</integer>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000021</key>
 		<dict>
 			<key>note</key>
 			<string>The start form: every option for a new task</string>
 			<key>xpos</key>
-			<real>260.0</real>
+			<integer>260</integer>
 			<key>ypos</key>
-			<real>-90.0</real>
+			<integer>-90</integer>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000022</key>
 		<dict>
 			<key>xpos</key>
-			<real>480.0</real>
+			<integer>480</integer>
 			<key>ypos</key>
-			<real>-90.0</real>
+			<integer>-90</integer>
 		</dict>
 		<key>F1A00000-0000-4000-8000-000000000023</key>
 		<dict>
@@ -601,6 +629,90 @@ Icon: [Sheep Icon Vectors by Vecteezy](https://www.vecteezy.com/free-vector/shee
 	</dict>
 	<key>userconfigurationconfig</key>
 	<array>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>herd</string>
+				<key>placeholder</key>
+				<string>herd</string>
+				<key>required</key>
+				<true/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>Starts an agent on a task.</string>
+			<key>label</key>
+			<string>Task keyword</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>herd_keyword</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>agents</string>
+				<key>placeholder</key>
+				<string>agents</string>
+				<key>required</key>
+				<true/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>Lists your running agents.</string>
+			<key>label</key>
+			<string>Agents keyword</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>agents_keyword</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>tell</string>
+				<key>placeholder</key>
+				<string>tell</string>
+				<key>required</key>
+				<true/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>Sends a running agent a message.</string>
+			<key>label</key>
+			<string>Message keyword</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>tell_keyword</string>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>default</key>
+				<string>tidy</string>
+				<key>placeholder</key>
+				<string>tidy</string>
+				<key>required</key>
+				<true/>
+				<key>trim</key>
+				<true/>
+			</dict>
+			<key>description</key>
+			<string>Removes worktrees whose pull request is merged or closed.</string>
+			<key>label</key>
+			<string>Tidy keyword</string>
+			<key>type</key>
+			<string>textfield</string>
+			<key>variable</key>
+			<string>tidy_keyword</string>
+		</dict>
 		<dict>
 			<key>config</key>
 			<dict>

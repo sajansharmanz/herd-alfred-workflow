@@ -15,6 +15,9 @@ SELF=${0:A}
 setopt extendedglob
 typeset -U path
 CFG=${HERD_CONFIG:-$HOME/.config/herd/config.json}
+# Remembered skills and Spaces; safe to delete. The form scripts don't always get alfred_workflow_cache, so fall back to its usual path.
+CACHE=${alfred_workflow_cache:-$HOME/Library/Caches/com.runningwithcrayons.Alfred/Workflow Data/${alfred_workflow_bundleid:-com.sajansharma.herd}}
+mkdir -p "$CACHE"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 KNOWN=(claude codex opencode gemini pi amp cursor-agent aider goose crush droid qwen copilot kiro-cli auggie hermes)
@@ -52,7 +55,7 @@ setup() {
 
 
   local tpl; tpl=$(for a in ${(k)SKILL_TPL}; do print -r -- "$a"$'\t'"$SKILL_TPL[$a]"; done | jq -Rn '[inputs | split("\t") | {(.[0]): .[1]}] | add')
-  mkdir -p "${CFG:h}"; rm -f "${CFG:h}/skills.tsv"  # rescan skills too
+  mkdir -p "${CFG:h}"; rm -f "$CACHE/skills.tsv"  # rescan skills too
   jq -n --argjson cur "$cur" --arg path "$PATH" --arg def "$def" --arg repo "$repo" --argjson roots "$roots" \
     --argjson found "$(print -rl -- $found | jq -Rsc 'split("\n") | map(select(. != ""))')" --argjson tpl "$tpl" --argjson defcmd "$DEFAULT_CMD" --argjson typed "$(print -rl -- $TYPED | jq -Rsc 'split("\n") | map(select(. != ""))')" \
     '
@@ -134,7 +137,7 @@ skill_rows() { # name<TAB>description for each skill file on stdin
 }
 
 global_skills() { # cached, because searching your home takes a few seconds. Refreshed in the background after an hour.
-  local cache=${CFG:h}/skills.tsv
+  local cache=$CACHE/skills.tsv
   build() { { skill_files $HOME; for d in ${(f)"$(c '.skillDirs[]?')"}; do skill_files "$(home "$d")"; done; } | skill_rows > "$cache.$$" && mv "$cache.$$" "$cache"; }
   if [[ ! -f $cache ]]; then build
   elif [[ -n $cache(#qNmh+1) ]]; then (build &>/dev/null &!); fi
@@ -159,7 +162,7 @@ spaces_list() { # name<TAB>1 when it's the one on screen
   case $backend in
     app) herdr-app ls | jq -r '.spaces[] | "\(.name)\t\(if .active then 1 else 0 end)"' ;;
     tui) herdr workspace list | jq -r '.result.workspaces[] | "\(.label)\t\(if .focused then 1 else 0 end)"' ;;
-    *) jq -r 'keys[] | "\(.)\t0"' "${CFG:h}/spaces.json" 2>/dev/null || true ;;
+    *) jq -r 'keys[] | "\(.)\t0"' "$CACHE/spaces.json" 2>/dev/null || true ;;
   esac
 }
 
@@ -455,7 +458,7 @@ tell_filter() { # complete an agent by its tab name (or terminal id when names r
     elif [[ -z $target || ${(L)key} == ${(L)target}* || $id == $target* ]]; then
       emit6 "$wh" "$(status_word $st) · $ag · Tab, then type your message. ⌥↩ for a longer one" "" "$key " 0 "$wh $id $ag" "$id" "" "$(status_icon $ag $st)"
     fi
-  done | items | jq --arg t "$target" 'if .items == [] then .items = [{title: "No agent called \($t)", subtitle: "Type tell and a space to list your agents", valid: false, autocomplete: ""}] else . end'
+  done | items | jq --arg t "$target" 'if .items == [] then .items = [{title: "No agent called \($t)", subtitle: "Type \(env.tell_keyword // "tell") and a space to list your agents", valid: false, autocomplete: ""}] else . end'
 }
 
 tell_agent() { # tell_agent <id> <message>
@@ -722,7 +725,7 @@ spacename=$(field space); spacename=${spacename:-$(c .space)}; spacename=${space
 # Herdr names: a lowercase letter first, then up to 31 of a-z 0-9 - _
 if [[ -n $namearg ]]; then hname=${${${(L)namearg}//[^a-z0-9_-]/-}[1,32]}; [[ $hname == [a-z]* ]] || hname=t-${hname[1,30]}
 else hname=herd-${${(L)tabname//[^a-zA-Z0-9-]/-}[1,20]}-$(date +%H%M%S); fi
-SPACES=${CFG:h}/spaces.json
+SPACES=$CACHE/spaces.json
 
 run() { if (( dry )); then print -ru2 -- "${(q-)@}"; else "$@"; fi; }
 # Steps that wait for the agent run in the background, so Alfred returns at once.

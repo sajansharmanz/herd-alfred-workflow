@@ -54,6 +54,7 @@ Starting an agent on a side task usually means opening a terminal, finding the r
 
 | Field | What it's for |
 |---|---|
+| **Keywords** | The words that start `herd`, `agents`, `tell` and `tidy`. Change any that clash with another workflow. This README uses the defaults. |
 | **Default agent** | The command that starts your agent, such as `claude`, `codex`, `opencode` or `pi`. Add flags if you like: `claude --model opus`. Leave it blank to use the first agent `herd` finds. |
 | **Repo folders** | One per line: a folder that holds your repos, such as `~/repos`, or a single repo. `#name` picks a repo from these. |
 | **Default repo** | The repo to use unless you type `#repo`. A name from your repo folders, or a full path. |
@@ -343,7 +344,7 @@ herd review 5281
 | `herd.alfredui/` | The start form. `scripts/fill` fills its lists when it opens, and `scripts/space` shows the New Space box when you pick **New Space…**. |
 | `herd-tell.alfredui/` | The message form. `scripts/fill` lists the running agents, `scripts/history` refreshes Recent when you pick another agent, `scripts/follow` remembers the Follow tickbox, and `scripts/pulse` runs every 2 seconds to show new output. |
 | `icons/` | The status icons. `make-icons.py` draws them. |
-| `docs/screenshots/` | The pictures in this README, taken with demo repos and agents |
+| `docs/screenshots/` | The pictures in this README and in the workflow's About text, taken with demo repos and agents |
 | `build.sh` | Packs everything into `herd.alfredworkflow` |
 | `scripts/next-version` | Works out the next version number from the commit messages |
 | `.github/workflows/release.yml` | Builds and publishes a release on every push to `master` |

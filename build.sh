@@ -8,6 +8,7 @@ chmod +x herd herd.alfredui/scripts/* herd-tell.alfredui/scripts/*
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 cp -R info.plist icon.png icons herd herd.alfredui herd-tell.alfredui "$stage/"
+cp -R docs/screenshots "$stage/images"  # the About text in Alfred shows these
 python3 - "$stage/info.plist" "${VERSION:-}" <<'PY'
 import plistlib, sys
 path, version = sys.argv[1], sys.argv[2]
@@ -20,5 +21,5 @@ with open(path, "wb") as f:
 PY
 out=$PWD/herd.alfredworkflow
 rm -f "$out"
-(cd "$stage" && zip -q -r -X "$out" info.plist icon.png icons herd herd.alfredui herd-tell.alfredui -x '*.DS_Store')
+(cd "$stage" && zip -q -r -X "$out" info.plist icon.png icons images herd herd.alfredui herd-tell.alfredui -x '*.DS_Store')
 echo "Built herd.alfredworkflow${VERSION:+ $VERSION}"
